@@ -115,7 +115,27 @@ chmod +x "$PLUGIN_DIR/hooks/theme-set"
 omarchy hook install theme-set "$PLUGIN_DIR/hooks/theme-set"
 echo "  Installed theme-set hook."
 
-# ── 7. Set as default mail client ─────────────────────────────────────────────
+# ── 7. Wire OS keybindings into Hyprland ──────────────────────────────────────
+HYPR_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
+HYPR_MAIN="$HYPR_CONFIG_DIR/hyprland.lua"
+BINDINGS_FILE="$HYPR_CONFIG_DIR/bindings.lua"
+
+if [[ ! -f "$HYPR_MAIN" ]]; then
+  echo "  WARNING: $HYPR_MAIN not found — skipping keybinding wiring."
+  echo "  Add to your hyprland.lua manually: require(\"thunderbird.bindings\")"
+else
+  # Copy bindings.lua to ~/.config/thunderbird-bindings.lua so it's on Lua path
+  cp "$PLUGIN_DIR/bin/bindings.lua" "$HYPR_CONFIG_DIR/thunderbird-bindings.lua"
+  if ! grep -q "thunderbird-bindings" "$HYPR_MAIN"; then
+    printf '\n-- omarchy-thunderbird keybindings\nrequire("hypr.thunderbird-bindings")\n' >> "$HYPR_MAIN"
+    echo "  Wired keybindings into $HYPR_MAIN"
+  else
+    # Re-copy to update
+    echo "  Keybindings already wired (updated)."
+  fi
+fi
+
+# ── 8. Set as default mail client ─────────────────────────────────────────────
 TB_DESKTOP="org.mozilla.Thunderbird.desktop"
 MAIL_MIMES=(
   x-scheme-handler/mailto
