@@ -1,0 +1,34 @@
+{
+  "policies": {
+    "DisableTelemetry": true,
+    "DisableAppUpdate": false,
+    "DontCheckDefaultClient": true,
+    "NoDefaultBookmarks": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "DisableSystemAddonUpdate": false,
+    "DisableFirefoxAccounts": false,
+    "PromptForDownloadLocation": false,
+    "BlockAboutConfig": false,
+    "DisableDeveloperTools": false,
+    "Extensions": {
+      "Install": [],
+      "Uninstall": [],
+      "Locked": []
+    },
+    "Preferences": {
+      "toolkit.legacyUserProfileCustomizations.stylesheets": {
+        "Value": true,
+        "Status": "default"
+      },
+      "datareporting.healthreport.uploadEnabled": {
+        "Value": false,
+        "Status": "default"
+      },
+      "mail.remote_content.blocked_by_default": {
+        "Value": true,
+        "Status": "default"
+      }
+    }
+  }
+}

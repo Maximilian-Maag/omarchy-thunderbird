@@ -1,0 +1,52 @@
+#!/bin/bash
+# Set Thunderbird as the system-wide default mail client.
+# Requires root.
+
+set -euo pipefail
+
+TB_DESKTOP="org.mozilla.Thunderbird.desktop"
+
+MAIL_MIMES=(
+  "x-scheme-handler/mailto"
+  "message/rfc822"
+  "text/calendar"
+  "text/vcard"
+  "text/x-vcard"
+  "x-scheme-handler/webcal"
+  "x-scheme-handler/webcals"
+  "x-scheme-handler/mid"
+)
+
+# ── /etc/xdg/mimeapps.list ───────────────────────────────────────────────────
+ETC_MIMEAPPS="/etc/xdg/mimeapps.list"
+[[ -f "$ETC_MIMEAPPS" ]] || printf '[Default Applications]\n' > "$ETC_MIMEAPPS"
+grep -q '^\[Default Applications\]' "$ETC_MIMEAPPS" || sed -i '1i[Default Applications]' "$ETC_MIMEAPPS"
+
+for mime in "${MAIL_MIMES[@]}"; do
+  sed -i "/^${mime//\//\\/}=/d" "$ETC_MIMEAPPS"
+  sed -i "/^\[Default Applications\]/a ${mime}=${TB_DESKTOP}" "$ETC_MIMEAPPS"
+done
+echo "  Written $ETC_MIMEAPPS"
+
+# ── /usr/share/applications/mimeapps.list (Omarchy system defaults) ──────────
+OMARCHY_MIMEAPPS="/usr/share/applications/mimeapps.list"
+if [[ -f "$OMARCHY_MIMEAPPS" ]]; then
+  [[ ! -f "${OMARCHY_MIMEAPPS}.bak.thunderbird" ]] && \
+    cp "$OMARCHY_MIMEAPPS" "${OMARCHY_MIMEAPPS}.bak.thunderbird"
+  for mime in "${MAIL_MIMES[@]}"; do
+    if grep -q "^${mime}=" "$OMARCHY_MIMEAPPS"; then
+      sed -i "s|^${mime//\//\\/}=.*|${mime}=${TB_DESKTOP}|" "$OMARCHY_MIMEAPPS"
+    else
+      sed -i "/^\[Default Applications\]/a ${mime}=${TB_DESKTOP}" "$OMARCHY_MIMEAPPS"
+    fi
+  done
+  echo "  Patched $OMARCHY_MIMEAPPS"
+fi
+
+# ── /usr/bin/x-email-client symlink ──────────────────────────────────────────
+TB_BIN=$(command -v thunderbird 2>/dev/null || echo /usr/bin/thunderbird)
+[[ -f "$TB_BIN" ]] && ln -sf "$TB_BIN" /usr/bin/x-email-client && \
+  echo "  Linked /usr/bin/x-email-client -> $TB_BIN"
+
+update-desktop-database /usr/share/applications 2>/dev/null || true
+echo "  System-wide default mail client set to Thunderbird."
