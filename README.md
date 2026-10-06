@@ -11,6 +11,7 @@
 | **System default** | Registers Thunderbird for mailto, message/rfc822, calendar, vCard at user, `/etc/xdg/`, and Omarchy system level |
 | **Sane UI defaults** | Wide layout, threaded view, date-descending sort |
 | **Policies** | `policies.json` installed to `/usr/lib/thunderbird/distribution/` for system-wide managed prefs |
+| **Autostart + workspace** | Starts at login and opens on workspace 4 (silent — does not steal focus) |
 
 ## Installation
 
@@ -36,7 +37,8 @@ The install script:
 4. Symlinks `userChrome.css` into the profile chrome dir
 5. Installs `policies.json` into `/usr/lib/thunderbird/distribution/`
 6. Installs the `theme-set` hook for automatic theme switching
-7. Sets Thunderbird as the default mail client (user + system levels)
+7. Adds Thunderbird to Hyprland autostart (opens on workspace 4)
+8. Sets Thunderbird as the default mail client (user + system levels)
 
 ## Themes
 

@@ -135,6 +135,17 @@ else
   fi
 fi
 
+# ── 7b. Add Thunderbird to Hyprland autostart ─────────────────────────────────
+AUTOSTART="$HYPR_CONFIG_DIR/autostart.lua"
+if [[ -f "$AUTOSTART" ]] && ! grep -q "thunderbird" "$AUTOSTART"; then
+  printf '\n-- omarchy-thunderbird: start Thunderbird at login (opens on workspace 4)\no.launch_on_start("thunderbird")\n' >> "$AUTOSTART"
+  echo "  Added Thunderbird to autostart."
+elif grep -q "thunderbird" "${AUTOSTART:-/dev/null}" 2>/dev/null; then
+  echo "  Thunderbird already in autostart."
+else
+  echo "  No autostart.lua found — add manually: o.launch_on_start(\"thunderbird\")"
+fi
+
 # ── 8. Set as default mail client ─────────────────────────────────────────────
 TB_DESKTOP="org.mozilla.Thunderbird.desktop"
 MAIL_MIMES=(

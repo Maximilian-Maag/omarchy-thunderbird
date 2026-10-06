@@ -8,6 +8,14 @@ hl.unbind("SUPER + SHIFT + ALT + E")
 hl.unbind("SUPER + SHIFT + C")
 
 -- Thunderbird: launch or focus
-o.bind("SUPER + SHIFT + E",       "Email",         { launch = "thunderbird",          focus = "^thunderbird$" })
+-- NOTE: the window class is "org.mozilla.Thunderbird" (not "thunderbird"),
+-- so match on "Thunderbird" for focus.
+o.bind("SUPER + SHIFT + E",       "Email",         { launch = "thunderbird",          focus = "Thunderbird" })
 o.bind("SUPER + SHIFT + ALT + E", "New email",     "thunderbird -compose")
-o.bind("SUPER + SHIFT + C",       "Calendar",      { launch = "thunderbird",          focus = "^thunderbird$" })
+o.bind("SUPER + SHIFT + C",       "Calendar",      { launch = "thunderbird",          focus = "Thunderbird" })
+
+-- Open Thunderbird on workspace 4 (at login and whenever it starts).
+-- "silent" = move it there without switching the active workspace, so the
+-- autostarted instance at login does not steal focus.
+-- Window class is "org.mozilla.Thunderbird" (Wayland app_id).
+o.window("^(org\\.mozilla\\.)?[Tt]hunderbird$", { workspace = "4 silent" })
