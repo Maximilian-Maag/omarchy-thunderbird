@@ -340,6 +340,107 @@ def check_syntax(repo: Path, files: list[str], cfg: dict, rep: Report) -> None:
         rep.ok("syntax/qml-scripts-skipped", f"{len(qml_js)} .pragma library file(s)")
 
 
+def check_tests(repo: Path, files: list[str], cfg: dict, rep: Report) -> None:
+    """A plugin must carry every test kind it claims, and run them in CI.
+
+    The kinds are declared in policy.json ("tests") so a repository that genuinely
+    has no integration surface says so explicitly instead of shipping no tests at
+    all. Mutation testing additionally needs a runner, a config and >=1 real target —
+    a mutation run over nothing is exactly the silent green this policy exists for.
+    """
+    spec = cfg.get("tests")
+    if not spec:
+        rep.warn("tests/layout", 'no "tests" section in policy.json - test kinds unchecked')
+        return
+    kinds = list(spec.get("kinds") or ["unit", "regression", "integration"])
+    if spec.get("integration_applicable") is False:
+        kinds = [k for k in kinds if k != "integration"]
+    patterns = spec.get("files") or {}
+    for kind in kinds:
+        pattern = patterns.get(kind) or "tests/test_%s_*.py" % kind
+        found = sorted(p.name for p in repo.glob(pattern))
+        if found:
+            rep.ok("tests/%s-present" % kind, ", ".join(found[:3]))
+        else:
+            rep.fail("tests/%s-present" % kind,
+                     "no file matches %s - every plugin needs %s tests" % (pattern, kind))
+
+    runner = spec.get("runner") or "tools/run_tests.sh"
+    mutator = spec.get("mutator") or "tools/mutator.py"
+    mutcfg = spec.get("mutation_config") or "tests/mutation.json"
+    for path in (mutator, mutcfg, runner):
+        if (repo / path).is_file():
+            rep.ok("tests/harness", path)
+        else:
+            rep.fail("tests/harness-missing", "%s is missing (required by the tests policy)" % path)
+
+    try:
+        data = json.loads((repo / mutcfg).read_text())
+        targets = data.get("targets") or []
+        missing = [str(t.get("path")) for t in targets if not (repo / str(t.get("path"))).is_file()]
+        if not targets:
+            rep.fail("tests/mutation-targets", "mutation.json lists no targets")
+        elif missing:
+            rep.fail("tests/mutation-targets", "targets that do not exist: " + ", ".join(missing))
+        else:
+            rep.ok("tests/mutation-targets", "%d target(s)" % len(targets))
+    except (OSError, ValueError) as exc:
+        rep.fail("tests/mutation-config", str(exc))
+
+    # The bar the project holds itself to, expressed in code rather than in prose.
+    try:
+        data = json.loads((repo / mutcfg).read_text())
+    except (OSError, ValueError):
+        data = {}
+    floor = spec.get("min_kill_rate", 0.80)
+    rate = data.get("min_kill_rate")
+    if not isinstance(rate, (int, float)):
+        rep.fail("tests/mutation-threshold", "mutation.json sets no min_kill_rate")
+    elif rate < floor:
+        rep.fail("tests/mutation-threshold",
+                 "min_kill_rate is %.2f, below the required %.2f" % (rate, floor))
+    else:
+        rep.ok("tests/mutation-threshold", "min_kill_rate %.2f >= %.2f" % (rate, floor))
+
+    # No test gaps: every source file the plugin ships is either mutated or exempt
+    # with a stated reason. A silent omission is the gap this catches.
+    globs = spec.get("source_globs") or ["bin/*", "userscripts/*", "tools/*.py"]
+    skip_ext = (".md", ".json", ".lua", ".css", ".html", ".txt", ".yml", ".yaml")
+    targets = {str(t.get("path")) for t in (data.get("targets") or [])}
+    exempt = {}
+    for item in (data.get("exempt") or []):
+        if not isinstance(item, dict) or not item.get("path"):
+            rep.fail("tests/no-gaps", "mutation.json 'exempt' entries need a path and a reason")
+            break
+        if not str(item.get("reason") or "").strip():
+            rep.fail("tests/no-gaps", "exempt %s has no reason — state why it is not mutated" % item["path"])
+            break
+        exempt[str(item["path"])] = item["reason"]
+    else:
+        unaccounted = []
+        for pattern in globs:
+            for path in sorted(repo.glob(pattern)):
+                rel = path.relative_to(repo).as_posix()
+                if not path.is_file() or path.suffix in skip_ext:
+                    continue
+                if rel in targets or rel in exempt:
+                    continue
+                unaccounted.append(rel)
+        if unaccounted:
+            rep.fail("tests/no-gaps",
+                     "source files neither mutated nor exempted: " + ", ".join(unaccounted[:6]))
+        else:
+            rep.ok("tests/no-gaps", "%d target(s), %d exempt" % (len(targets), len(exempt)))
+
+    ci = spec.get("ci") or ".github/workflows/test.yml"
+    if not (repo / ci).is_file():
+        rep.fail("tests/ci-missing", "%s is missing - the suite must run in CI" % ci)
+    elif Path(runner).name in (repo / ci).read_text():
+        rep.ok("tests/ci-runs-suite", ci)
+    else:
+        rep.fail("tests/ci-runs-suite", "%s does not call %s" % (ci, Path(runner).name))
+
+
 def check_hygiene(repo: Path, files: list[str], cfg: dict, rep: Report) -> None:
     """Repo hygiene: no symlinks, no build junk, no conflict markers, no /home/me."""
     allow = cfg.get("allow", {})
@@ -458,7 +559,7 @@ def check_omarchy_validate(repo: Path, files: list[str], cfg: dict, rep: Report,
         rep.ok("plugin/omarchy-validate")
 
 
-CHECKS = [check_hygiene, check_syntax, check_manifest, check_shebangs, check_shell_style,
+CHECKS = [check_hygiene, check_syntax, check_tests, check_manifest, check_shebangs, check_shell_style,
           check_npm, check_version_bumped, check_omarchy_validate]
 
 

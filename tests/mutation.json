@@ -1,0 +1,48 @@
+{
+  "_about": [
+    "Mutation-test targets for this plugin. Each target names the file to mutate and",
+    "the test command that must notice a change (the fast module that covers it).",
+    "Run with tools/mutator.py, or as part of tools/run_tests.sh.",
+    "min_kill_rate is the floor: below it the run fails, and a target that yields no",
+    "mutants at all fails too, so a mutation pass can never be green over nothing.",
+    "Files this repository ships but cannot meaningfully mutate here are listed under",
+    "'exempt' with a reason, which the policy check enforces."
+  ],
+  "min_kill_rate": 0.85,
+  "timeout": 60,
+  "per_operator": 2,
+  "max_mutants": 120,
+  "targets": [
+    {
+      "path": "profile/user.js",
+      "lang": "javascript",
+      "tests": [
+        "node",
+        "--test",
+        "tests/js/prefs.test.js"
+      ]
+    },
+    {
+      "path": "hooks/theme-set",
+      "lang": "shell",
+      "tests": [
+        "bash",
+        "tests/shell/test_theme_set.sh"
+      ]
+    }
+  ],
+  "exempt": [
+    {
+      "path": "bin/set-system-default",
+      "reason": "writes /etc/xdg, /usr/share and /usr/bin as root; no sandbox can run it, so it is pinned by static assertions in tests/shell/test_set_system_default.sh"
+    },
+    {
+      "path": "tools/mutator.py",
+      "reason": "vendored byte-identical engine tooling, not plugin source; mutating it makes its own self-tests non-terminating (the and->or operator on code_mask's comment guard loops forever), and its shipped self-test only covers ~half its mutants"
+    },
+    {
+      "path": "tools/policy_check.py",
+      "reason": "vendored byte-identical engine tooling, not plugin source; it is exercised end-to-end by 'policy as code' on every run and its unit tests live in the shared tooling repo, so mutating this copy would test a file this repository does not own"
+    }
+  ]
+}
