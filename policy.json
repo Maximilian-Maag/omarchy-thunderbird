@@ -1,0 +1,13 @@
+{
+  "checker": 3,
+  "plugin": true,
+  "shell_style": true,
+  "shebang": "bash",
+  "ignore": [],
+  "allow": {
+    "symlinks": {},
+    "artifacts": {},
+    "secrets": {},
+    "abs_path": {}
+  }
+}
