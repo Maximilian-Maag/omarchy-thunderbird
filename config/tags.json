@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Declarative Thunderbird tag definitions. bin/omarchy-thunderbird-apply renders",
+    "these into the profile's user.js as mailnews.tags.<key>.{tag,color} prefs, so the",
+    "tag set is configuration rather than something clicked together in the UI.",
+    "key must be [A-Za-z0-9_-]+ and unique; color must be a 6-digit hex.",
+    "The 'suspicious' tag is applied by the guard extension when it flags a message."
+  ],
+  "tags": [
+    { "key": "important",   "name": "Important",   "color": "#e64553" },
+    { "key": "action",      "name": "Action",      "color": "#fe640b" },
+    { "key": "waiting",     "name": "Waiting",     "color": "#df8e1d" },
+    { "key": "newsletter",  "name": "Newsletter",  "color": "#8839ef" },
+    { "key": "invoice",     "name": "Invoice",     "color": "#40a02b" },
+    { "key": "receipt",     "name": "Receipt",     "color": "#179299" },
+    { "key": "archive",     "name": "Archive",     "color": "#7c7f93" },
+    { "key": "suspicious",  "name": "Suspicious",  "color": "#d20f39" }
+  ]
+}

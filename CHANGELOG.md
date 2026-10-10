@@ -2,6 +2,37 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.3.0] — 2026-10-11
+
+### Added
+- **Declarative config** (`config/tags.json`, `config/settings.json`) rendered into the
+  profile's `user.js` by `bin/omarchy-thunderbird-apply`. Tags and preferences are now
+  reviewed, diffed and tested as files, not clicked together in the UI. Merge is
+  idempotent and preserves hand-added prefs.
+- **Guard extension** (`extension/`, packaged by `bin/omarchy-thunderbird-xpi`): scores
+  every displayed message for scam/phishing risk and, on warn/danger, tags it
+  `suspicious` and raises a notification. The engine (`guard-engine.js`) is pure and
+  exhaustively tested: insecure/odd schemes, IP-literal, punycode and non-ASCII hosts,
+  shorteners, suspicious TLDs, deep subdomains, userinfo tricks, text-vs-href mismatch,
+  and — on the sender — brand impersonation, name-hiding-address, reply-to mismatch,
+  SPF/DKIM/DMARC failures and lookalike domains of known contacts.
+  The extension loads because `profile/user.js` disables signature enforcement; the
+  e2e suite proves a real Thunderbird loads it and marks it active.
+
+### Fixed
+- **Prefs that enterprise policy silently ignored.** `toolkit.*`, `xpinstall.*` and
+  `datareporting.healthreport.*` are outside Thunderbird's policy allowlist — setting
+  them via `policies.json` only logged "Preference not allowed for stability reasons".
+  Those prefs now live in `user.js`, `policies.json` keeps only allowlisted prefs, and a
+  unit test enforces that every policy pref is on the allowlist.
+
+### Testing
+- New e2e: the built `.xpi` is sideloaded and a real headless Thunderbird is asserted to
+  load it (`extensions.json` active=true).
+- Unit/regression/integration/e2e coverage for the applier, the xpi tool, the manifest,
+  and the guard engine (node:test); all new sources registered as mutation targets except
+  the WebExtension glue and the rules data, which are exempted with reasons.
+
 ## [1.2.0] — 2026-10-11
 
 ### Added

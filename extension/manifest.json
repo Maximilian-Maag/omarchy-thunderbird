@@ -1,0 +1,26 @@
+{
+  "manifest_version": 2,
+  "name": "Omarchy Thunderbird Guard",
+  "version": "1.0.0",
+  "description": "Flags scam senders and malicious links in Thunderbird and tags suspect mail.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "guard@omarchy-thunderbird.maximilian-maag",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "messagesRead",
+    "messagesModify",
+    "accountsRead",
+    "storage",
+    "notifications"
+  ],
+  "background": {
+    "scripts": [
+      "guard-rules.js",
+      "guard-engine.js",
+      "background.js"
+    ]
+  }
+}

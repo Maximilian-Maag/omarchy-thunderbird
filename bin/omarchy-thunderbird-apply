@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Render the declarative config into the Thunderbird profile.
+
+Configuration that only lives in a UI is configuration you cannot review, diff, or
+test. This tool turns the files under ``config/`` into the profile's ``user.js``:
+
+* ``config/settings.json`` — plain preference overrides (machine/user specific)
+* ``config/tags.json``     — tag definitions -> ``mailnews.tags.<key>.{tag,color}``
+
+The shipped ``profile/user.js`` is the base; config overrides it (later ``user_pref``
+calls win), and any pref lines a user added by hand to their own ``user.js`` are
+preserved as long as they are not managed here. The result is written atomically.
+
+Usage:
+    omarchy-thunderbird-apply                 # write the profile's user.js
+    omarchy-thunderbird-apply --print         # print to stdout (dry run)
+    omarchy-thunderbird-apply --profile P     # target a specific profile
+"""
+
+import argparse
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
+TAG_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+PREF_KEY = re.compile(r'user_pref\(\s*"([^"]+)"')
+
+
+def load_tags(path: pathlib.Path):
+    """Validate and return the tag list from a tags.json file."""
+    data = json.loads(path.read_text())
+    tags = data.get("tags")
+    if not isinstance(tags, list) or not tags:
+        raise ValueError("%s: 'tags' must be a non-empty list" % path)
+    seen = set()
+    for tag in tags:
+        key = tag.get("key", "")
+        if not TAG_KEY.match(key):
+            raise ValueError("%s: bad tag key %r (want [A-Za-z0-9_-]+)" % (path, key))
+        if key in seen:
+            raise ValueError("%s: duplicate tag key %r" % (path, key))
+        seen.add(key)
+        if not COLOR.match(str(tag.get("color", ""))):
+            raise ValueError("%s: bad colour for %r (want #RRGGBB)" % (path, key))
+        if not str(tag.get("name", "")).strip():
+            raise ValueError("%s: tag %r has no name" % (path, key))
+    return tags
+
+
+def load_settings(path: pathlib.Path):
+    """Return validated {pref: value} from a settings.json file."""
+    data = json.loads(path.read_text())
+    prefs = data.get("prefs", {})
+    if not isinstance(prefs, dict):
+        raise ValueError("%s: 'prefs' must be an object" % path)
+    for key, value in prefs.items():
+        if not str(key).strip():
+            raise ValueError("%s: empty pref key" % path)
+        if not isinstance(value, (bool, int, float, str)):
+            raise ValueError("%s: pref %s has a non-literal value %r" % (path, key, value))
+    return prefs
+
+
+def tags_to_prefs(tags):
+    """{pref: value} for a validated tag list."""
+    prefs = {}
+    for tag in tags:
+        key = tag["key"]
+        prefs["mailnews.tags.%s.tag" % key] = str(tag["name"])
+        prefs["mailnews.tags.%s.color" % key] = str(tag["color"])
+    return prefs
+
+
+def literal(value) -> str:
+    """A value rendered as a JS literal for user_pref()."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return '"%s"' % str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def pref_lines(prefs) -> str:
+    lines = []
+    for key in prefs:
+        lines.append('user_pref("%s", %s);' % (key, literal(prefs[key])))
+    return "\n".join(lines)
+
+
+def keys_in(text) -> set:
+    return set(PREF_KEY.findall(text))
+
+
+def _drop_managed(text, managed):
+    """Lines whose pref key is in `managed` are removed; everything else kept."""
+    kept = []
+    for line in text.splitlines():
+        match = PREF_KEY.search(line)
+        if match and match.group(1) in managed:
+            continue
+        kept.append(line)
+    return kept
+
+
+def build_userjs(base_text: str, config_prefs, existing_text: str = "") -> str:
+    """base user.js + config overrides, preserving foreign prefs from `existing`.
+
+    Every pref key is emitted exactly once: base lines overridden by config are
+    dropped (the override block re-emits them, so it wins), and duplicate keys in a
+    user.js are avoided entirely rather than relying on last-write-wins.
+    """
+    override_keys = set(config_prefs)
+    managed = override_keys | keys_in(base_text)
+
+    base_kept = "\n".join(_drop_managed(base_text, override_keys)).rstrip("\n")
+    # Only real pref lines from the existing file are preserved (and only if we do not
+    # manage that key). Comment/blank lines are dropped so a re-run is idempotent
+    # rather than accumulating our own generated markers as "foreign" content.
+    foreign = []
+    for line in existing_text.splitlines():
+        match = PREF_KEY.search(line)
+        if match and match.group(1) not in managed:
+            foreign.append(line)
+
+    parts = [base_kept]
+    override_block = pref_lines(config_prefs)
+    if override_block:
+        parts.append("// ── config/ overrides (generated by omarchy-thunderbird-apply) ──\n"
+                     + override_block)
+    if foreign:
+        parts.append("// ── prefs preserved from the existing user.js ──\n" + "\n".join(foreign))
+    return "\n\n".join(part for part in parts if part) + "\n"
+
+
+def write_atomic(path: pathlib.Path, text: str) -> None:
+    """Write text, replacing the file — never following a symlink to its target."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def resolve_profile(explicit):
+    if explicit:
+        return pathlib.Path(explicit)
+    finder = PLUGIN_DIR / "bin/omarchy-tb-profile"
+    result = subprocess.run([sys.executable, str(finder)], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return pathlib.Path(result.stdout.strip())
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Apply declarative Thunderbird config")
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--config-dir", default=str(PLUGIN_DIR / "config"))
+    parser.add_argument("--print", dest="dry_run", action="store_true")
+    args = parser.parse_args(argv)
+
+    config_dir = pathlib.Path(args.config_dir)
+    try:
+        tags = load_tags(config_dir / "tags.json")
+        settings = load_settings(config_dir / "settings.json")
+    except (OSError, ValueError) as exc:
+        print("omarchy-thunderbird-apply: %s" % exc, file=sys.stderr)
+        return 1
+
+    config_prefs = {}
+    config_prefs.update(tags_to_prefs(tags))
+    config_prefs.update(settings)
+
+    profile = resolve_profile(args.profile)
+    if profile is None or not profile.is_dir():
+        print("omarchy-thunderbird-apply: no Thunderbird profile found", file=sys.stderr)
+        return 1
+
+    base = (PLUGIN_DIR / "profile/user.js").read_text()
+    existing = ""
+    target = profile / "user.js"
+    if target.is_file():
+        existing = target.read_text()
+
+    rendered = build_userjs(base, config_prefs, existing)
+    if args.dry_run:
+        sys.stdout.write(rendered)
+    else:
+        write_atomic(target, rendered)
+        print("omarchy-thunderbird: applied %d tag(s) and %d setting(s) to %s"
+              % (len(tags), len(settings), target))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

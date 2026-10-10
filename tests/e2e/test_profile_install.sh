@@ -43,8 +43,13 @@ assert_file "install: userContent.css rendered (message body)" "$CHROME/userCont
 assert_contains "install: message body follows the theme" \
   '--tb-bg: #1a1b26;' "$CHROME/userContent.css"
 
-# ── 3. user.js is merged into the profile (as install.sh does) ───────────────
-cp "$E2E_REPO/profile/user.js" "$PROFILE/user.js"
+# ── 3. the declarative config is applied to user.js (as install.sh does) ─────
+XDG_CONFIG_HOME="$ROOT" python3 "$E2E_REPO/bin/omarchy-thunderbird-apply" --profile "$PROFILE" >/dev/null 2>&1
+assert_file "apply: generated user.js" "$PROFILE/user.js"
+assert_contains "apply: tag prefs written" \
+  'user_pref("mailnews.tags.important.tag", "Important");' "$PROFILE/user.js"
+assert_contains "apply: configured setting written" \
+  'user_pref("mail.spam.logging.enabled", true);' "$PROFILE/user.js"
 
 # ── 4. a real headless Thunderbird boots on this profile and persists prefs ──
 tb_pid="$(e2e_tb_start "$ROOT" "$PROFILE" 40)"
@@ -65,6 +70,9 @@ if [[ -n $tb_pid ]] && [[ -f "$PROFILE/prefs.js" ]]; then
   # A non-boolean value, to show typed values survive the round-trip.
   assert_contains "prefs.js: crash reporter URL blanked" \
     'user_pref("breakpad.reportURL", "");' "$PROFILE/prefs.js"
+  # A tag defined in config/tags.json must materialise in a real profile.
+  assert_contains "prefs.js: config tag definition applied" \
+    'user_pref("mailnews.tags.important.tag"' "$PROFILE/prefs.js"
   # The notification / identity prefs added by this plugin must also survive a real
   # boot — they are the point of the feature, so their absence is a real failure.
   assert_contains "prefs.js: new-mail sound silenced" \

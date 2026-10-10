@@ -86,9 +86,63 @@
         "unittest",
         "tests.test_unit_unread"
       ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-apply",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_apply"
+      ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-xpi",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_extension"
+      ]
+    },
+    {
+      "path": "extension/guard-engine.js",
+      "lang": "javascript",
+      "tests": [
+        "node",
+        "--test",
+        "tests/js/guard-engine.test.js"
+      ],
+      "equivalent": [
+        {
+          "line": 11,
+          "kind": "and->or",
+          "reason": "the UMD wrapper's `typeof module === \"object\" && module.exports` guard: in every environment this file runs in (node's CommonJS loader and the extension's shared background scope) both operands are true, so && and || select the same branch. Not observable."
+        },
+        {
+          "line": 38,
+          "kind": "le->lt",
+          "reason": "`parts.length <= 2` in registrable(): changing <= to < only alters the 2-label case, where both branches (join of two parts vs slice(-2) of two parts) produce the same string. Not observable."
+        },
+        {
+          "line": 113,
+          "kind": "lt->le",
+          "reason": "`href.indexOf(\"@\") < href.indexOf(host)` in the userinfo check: @ can never occur at the host's start index (a hostname contains no @), so < and <= never differ. Not observable."
+        }
+      ]
     }
   ],
   "exempt": [
+    {
+      "path": "extension/background.js",
+      "reason": "Thunderbird WebExtension glue (browser.* APIs, messageDisplay listener); it cannot run outside a real Thunderbird, so it is pinned by the e2e extension-load test and by manifest/background-order checks in tests/test_unit_extension.py rather than mutated"
+    },
+    {
+      "path": "extension/guard-rules.js",
+      "reason": "pure data (the shortener/TLD/brand lists and thresholds); it has no branching to mutate, and its shape is asserted by the engine tests"
+    },
     {
       "path": "bin/set-system-default",
       "reason": "writes /etc/xdg, /usr/share and /usr/bin as root; no sandbox can run it, so it is pinned by static assertions in tests/shell/test_set_system_default.sh"

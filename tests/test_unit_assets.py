@@ -66,27 +66,38 @@ class ThemeCssCase(unittest.TestCase):
 
 
 class PoliciesCase(unittest.TestCase):
+    # Pref prefixes Thunderbird's enterprise policy will actually apply; anything
+    # else is logged as "not allowed for stability reasons" and silently ignored.
+    ALLOWED_PREFIXES = (
+        "accessibility.", "app.update.", "browser.", "calendar.", "chat.",
+        "datareporting.policy.", "dom.", "extensions.", "general.autoScroll",
+        "general.smoothScroll", "geo.", "gfx.", "intl.", "layers.", "layout.",
+        "mail.", "mailnews.", "media.", "network.", "pdfjs.", "places.", "print.",
+        "signon.", "spellchecker.", "ui.", "widget.",
+    )
+
     @classmethod
     def setUpClass(cls):
         cls.data = json.loads(POLICIES.read_text())["policies"]
 
-    def test_userchrome_stylesheets_are_enabled(self):
-        pref = self.data["Preferences"][
-            "toolkit.legacyUserProfileCustomizations.stylesheets"]
-        self.assertIs(pref["Value"], True)
-
-    def test_telemetry_and_health_reporting_are_disabled(self):
+    def test_telemetry_is_disabled(self):
         self.assertIs(self.data["DisableTelemetry"], True)
-        pref = self.data["Preferences"]["datareporting.healthreport.uploadEnabled"]
-        self.assertIs(pref["Value"], False)
+
+    def test_default_client_prompt_is_suppressed(self):
+        # The plugin IS the default client, so Thunderbird must not keep asking.
+        self.assertIs(self.data["DontCheckDefaultClient"], True)
 
     def test_remote_content_is_blocked_by_default(self):
         pref = self.data["Preferences"]["mail.remote_content.blocked_by_default"]
         self.assertIs(pref["Value"], True)
 
-    def test_default_client_prompt_is_suppressed(self):
-        # The plugin IS the default client, so Thunderbird must not keep asking.
-        self.assertIs(self.data["DontCheckDefaultClient"], True)
+    def test_every_policy_pref_is_on_the_allowlist(self):
+        # A pref outside these prefixes does nothing (TB rejects it) — silent config
+        # drift. Everything the plugin actually needs lives in profile/user.js.
+        for key in self.data.get("Preferences", {}):
+            self.assertTrue(
+                any(key.startswith(prefix) for prefix in self.ALLOWED_PREFIXES),
+                "policy pref %s is outside Thunderbird's allowlist" % key)
 
 
 if __name__ == "__main__":

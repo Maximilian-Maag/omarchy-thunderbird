@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Package the guard extension as an .xpi and install it into the profile.
+
+Thunderbird loads add-ons from ``<profile>/extensions/<gecko-id>.xpi``. With
+``xpinstall.signatures.required=false`` (set by the plugin's policies.json) an
+unsigned, self-built add-on loads from there, so a personal guard extension needs no
+AMO signing round-trip.
+
+    omarchy-thunderbird-xpi --build              # write build/omarchy-thunderbird-guard.xpi
+    omarchy-thunderbird-xpi --install            # build + copy into the profile
+    omarchy-thunderbird-xpi --print-id           # the gecko id (used as the filename)
+
+The archive is deterministic (sorted entries, fixed timestamps) so the same sources
+produce a byte-identical xpi.
+"""
+
+import argparse
+import json
+import pathlib
+import subprocess
+import sys
+import zipfile
+
+PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
+EXT_DIR = PLUGIN_DIR / "extension"
+DEFAULT_OUT = PLUGIN_DIR / "build" / "omarchy-thunderbird-guard.xpi"
+
+# Fixed timestamp for reproducible archives (zip epoch minimum).
+FIXED_TIME = (1980, 1, 1, 0, 0, 0)
+
+REQUIRED_MANIFEST_KEYS = ["manifest_version", "name", "version", "browser_specific_settings"]
+
+
+def load_manifest(ext_dir: pathlib.Path) -> dict:
+    return json.loads((ext_dir / "manifest.json").read_text())
+
+
+def extension_id(manifest: dict) -> str:
+    return manifest["browser_specific_settings"]["gecko"]["id"]
+
+
+def files_to_pack(ext_dir: pathlib.Path):
+    """The files that go into the xpi, in a stable order."""
+    return sorted(p for p in ext_dir.rglob("*") if p.is_file())
+
+
+def build_xpi(ext_dir: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
+    manifest = load_manifest(ext_dir)
+    for key in REQUIRED_MANIFEST_KEYS:
+        if key not in manifest:
+            raise ValueError("manifest.json is missing required key %r" % key)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in files_to_pack(ext_dir):
+            info = zipfile.ZipInfo(path.relative_to(ext_dir).as_posix(), FIXED_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, path.read_bytes())
+    return out
+
+
+def resolve_profile(explicit):
+    if explicit:
+        return pathlib.Path(explicit)
+    finder = PLUGIN_DIR / "bin/omarchy-tb-profile"
+    result = subprocess.run([sys.executable, str(finder)], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return pathlib.Path(result.stdout.strip())
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Build/install the guard extension")
+    parser.add_argument("--build", action="store_true")
+    parser.add_argument("--install", action="store_true")
+    parser.add_argument("--print-id", action="store_true")
+    parser.add_argument("--out", default=str(DEFAULT_OUT))
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--extension-dir", default=str(EXT_DIR))
+    args = parser.parse_args(argv)
+
+    ext_dir = pathlib.Path(args.extension_dir)
+    manifest = load_manifest(ext_dir)
+    gecko_id = extension_id(manifest)
+
+    if args.print_id:
+        print(gecko_id)
+        return 0
+
+    out = pathlib.Path(args.out)
+    if args.build or args.install:
+        try:
+            build_xpi(ext_dir, out)
+        except (OSError, ValueError) as exc:
+            print("omarchy-thunderbird-xpi: %s" % exc, file=sys.stderr)
+            return 1
+        print("built %s" % out)
+
+    if args.install:
+        profile = resolve_profile(args.profile)
+        if profile is None or not profile.is_dir():
+            print("omarchy-thunderbird-xpi: no Thunderbird profile found", file=sys.stderr)
+            return 1
+        dest_dir = profile / "extensions"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / ("%s.xpi" % gecko_id)
+        dest.write_bytes(out.read_bytes())
+        print("installed %s" % dest)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

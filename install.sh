@@ -30,21 +30,10 @@ else
   echo "  Using profile: $PROFILE"
 fi
 
-# ── 3. Apply user.js preferences ─────────────────────────────────────────────
+# ── 3. Apply declarative prefs + tags (config/settings.json, config/tags.json) ─
 if [[ -n "$PROFILE" ]]; then
-  # Merge: append our prefs that aren't already set
-  USERJS="$PROFILE/user.js"
-  if [[ -f "$USERJS" ]]; then
-    # Remove any of our keys that may already exist, then append ours
-    while IFS= read -r line; do
-      key=$(echo "$line" | grep -oP '(?<=user_pref\(")[^"]+' || true)
-      [[ -n "$key" ]] && sed -i "/user_pref(\"${key//\./\\.}\"/d" "$USERJS" 2>/dev/null || true
-    done < "$PLUGIN_DIR/profile/user.js"
-    cat "$PLUGIN_DIR/profile/user.js" >> "$USERJS"
-  else
-    cp "$PLUGIN_DIR/profile/user.js" "$USERJS"
-  fi
-  echo "  Applied user.js preferences."
+  "$PLUGIN_DIR/bin/omarchy-thunderbird-apply" --profile "$PROFILE"
+  echo "  Applied user.js preferences and tags."
 fi
 
 # ── 4. Set up userChrome.css theming ──────────────────────────────────────────
@@ -80,6 +69,13 @@ elif (( EUID == 0 )); then
   ln -sf "$BIN_SRC" "$BIN_DEST" && echo "  Installed unread backend to $BIN_DEST."
 elif command -v sudo >/dev/null 2>&1; then
   sudo ln -sf "$BIN_SRC" "$BIN_DEST" && echo "  Installed unread backend to $BIN_DEST."
+fi
+
+# ── 4c. Build and install the guard extension (unsigned, loads from the profile) ─
+if [[ -n "$PROFILE" ]]; then
+  "$PLUGIN_DIR/bin/omarchy-thunderbird-xpi" --install --profile "$PROFILE" \
+    --out "$PLUGIN_DIR/build/omarchy-thunderbird-guard.xpi" >/dev/null
+  echo "  Installed guard extension (scam/link warnings)."
 fi
 
 # ── 5. Install policies.json for system-wide managed preferences ──────────────

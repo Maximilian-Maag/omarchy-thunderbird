@@ -38,6 +38,7 @@
       "bin/*",
       "hooks/*",
       "profile/*",
+      "extension/*.js",
       "tools/*.py"
     ]
   }

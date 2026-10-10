@@ -17,16 +17,12 @@
       "Locked": []
     },
     "Preferences": {
-      "toolkit.legacyUserProfileCustomizations.stylesheets": {
-        "Value": true,
-        "Status": "default"
-      },
-      "datareporting.healthreport.uploadEnabled": {
-        "Value": false,
-        "Status": "default"
-      },
       "mail.remote_content.blocked_by_default": {
         "Value": true,
+        "Status": "default"
+      },
+      "extensions.autoDisableScopes": {
+        "Value": 0,
         "Status": "default"
       }
     }

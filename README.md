@@ -9,6 +9,8 @@
 | **22 Omarchy themes** | Full chrome + message-body coverage for every stock theme. Applied by rendering the active theme into `userChrome.css`, so it works with **no userChromeJS loader** |
 | **Instant reload** | `omarchy-thunderbird-reload` applies the current theme and restarts Thunderbird so the change is visible now (Thunderbird reads the stylesheet at startup) |
 | **Unread bar widget** | Unread count in the Omarchy bar (`Maximilian-Maag.thunderbird`); click to open Thunderbird |
+| **Guard extension** | Scores every message for scam/phishing risk; tags suspect mail `suspicious` and warns |
+| **Config as code** | Tags and preferences declared in `config/`, rendered into the profile — reviewable and tested |
 | **Privacy defaults** | Remote content blocked, telemetry off, crash reporter disabled |
 | **Notification defaults** | No message preview on alerts, no Thunderbird chime, unread count in the badge |
 | **Identity defaults** | No signature on replies, no OpenPGP reminder, system GnuPG allowed as OpenPGP backend, no start page |
@@ -92,22 +94,63 @@ counted. For the common local / offline case the count is exact.
 omarchy-thunderbird/
 ├── themes/
 │   └── userChrome.css      — all 22 theme palettes (source of truth for the renderer)
+├── config/
+│   ├── tags.json           — declarative tag definitions
+│   └── settings.json       — declarative preference overrides
+├── extension/
+│   ├── manifest.json       — guard WebExtension manifest
+│   ├── guard-engine.js     — pure scam/phishing scoring engine
+│   ├── guard-rules.js      — shortener/TLD/brand lists and thresholds
+│   └── background.js       — Thunderbird wiring (messageDisplay → engine → tag/warn)
 ├── profile/
-│   └── user.js             — profile preferences (merged on install)
+│   └── user.js             — base profile preferences
 ├── hooks/
 │   └── theme-set           — omarchy hook: renders + applies the theme on switch
 ├── bin/
 │   ├── omarchy-tb-profile       — locate the Thunderbird profile
 │   ├── omarchy-tb-render-css    — render applied userChrome.css / userContent.css
-│   ├── omarchy-thunderbird-reload — apply the theme and restart Thunderbird
-│   ├── omarchy-thunderbird-unread — unread-message count (bar widget backend)
-│   ├── policies.json            — managed preferences
+│   ├── omarchy-thunderbird-apply      — apply config/ into the profile's user.js
+│   ├── omarchy-thunderbird-xpi        — build/install the guard extension
+│   ├── omarchy-thunderbird-reload     — apply the theme and restart Thunderbird
+│   ├── omarchy-thunderbird-unread     — unread-message count (bar widget backend)
+│   ├── policies.json            — managed preferences (allowlisted prefs only)
 │   └── set-system-default       — privileged script: system-wide MIME defaults
 ├── shell/
 │   └── BarWidget.qml       — unread-mail bar widget
 ├── install.sh              — one-shot installer
 └── manifest.json           — Omarchy plugin manifest (mail-client + bar-widget)
 ```
+
+## Declarative config
+
+Tags and preferences live in files, not in the UI, and are applied to the profile by
+`omarchy-thunderbird-apply`:
+
+```bash
+bin/omarchy-thunderbird-apply --print      # show the generated user.js
+bin/omarchy-thunderbird-apply              # write it into the profile
+```
+
+- `config/tags.json` — tag keys, names and colours → `mailnews.tags.<key>.{tag,color}`
+- `config/settings.json` — preference overrides
+
+The merge is idempotent and preserves any pref you added by hand. A unit test checks
+every configured pref actually differs from Thunderbird's built-in default (a pref equal
+to the default is dropped from `prefs.js` and does nothing).
+
+## Guard extension
+
+`omarchy-thunderbird-xpi --install` builds and sideloads the guard extension (into the
+profile's `extensions/`, which works because `user.js` disables signature enforcement).
+It scores each displayed message with a pure heuristics engine (`extension/guard-engine.js`):
+
+- links: insecure/odd schemes, IP-literal, punycode and non-ASCII hosts, shorteners,
+  suspicious TLDs, deep subdomains, userinfo tricks, shown-text vs real-href mismatch;
+- sender: brand impersonation, a display name hiding a different address, Reply-To
+  mismatch, SPF/DKIM/DMARC failures, and lookalike domains of your known contacts.
+
+On `warn`/`danger` it tags the message `suspicious` and raises a notification. It is a
+heuristic aid, not a guarantee — it pairs with Thunderbird's own spam detection.
 
 ## Testing
 

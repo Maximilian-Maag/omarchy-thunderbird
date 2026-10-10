@@ -65,5 +65,13 @@ user_pref("mail.openpgp.remind_encryption_possible", false);
 user_pref("mail.openpgp.allow_external_gnupg", true);
 user_pref("mailnews.start_page.enabled", false);
 
+// ── Extensions ────────────────────────────────────────────────────────────────
+// Let the plugin's own (unsigned) guard extension load from the profile. These
+// CANNOT be set through enterprise policy: `xpinstall.` and `toolkit.` are outside
+// the policy allowlist (Thunderbird logs "Preference not allowed for stability
+// reasons" and ignores them), so they must live in user.js.
+user_pref("xpinstall.signatures.required", false);
+user_pref("extensions.autoDisableScopes", 0);
+
 // ── Calendar/Tasks ────────────────────────────────────────────────────────────
 user_pref("calendar.view.useSystemColors", false);

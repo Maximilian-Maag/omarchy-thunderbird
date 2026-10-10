@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "Declarative preference overrides, merged after profile/user.js by",
+    "bin/omarchy-thunderbird-apply. Keys here win over the base user.js (last write",
+    "wins in the generated file), so this is the place for machine- or user-specific",
+    "prefs without editing the shipped user.js.",
+    "Values are JSON: true/false, numbers, or strings.",
+    "Only prefs whose value DIFFERS from Thunderbird's built-in default belong here: a",
+    "pref set equal to its default is dropped from prefs.js and does nothing. A unit",
+    "test cross-checks every entry against the installed Thunderbird's defaults."
+  ],
+  "prefs": {
+    "mail.spam.logging.enabled": true
+  }
+}
