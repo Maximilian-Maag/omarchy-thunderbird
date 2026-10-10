@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Print the Thunderbird profile directory this plugin should write into.
+
+Thunderbird keeps profiles under ``$XDG_CONFIG_HOME/thunderbird`` (the XDG path, not
+``~/.thunderbird``) and lists them in ``profiles.ini``. The plugin must agree with
+Thunderbird on which one is "the" profile, so this selection lives in one place
+instead of being copy-pasted into every script.
+
+Preference order (matching Thunderbird's own default-profile choice):
+  1. a profile whose path contains "default-release"
+  2. the profile flagged ``Default=1``
+  3. the first profile with an ``IsRelative`` key
+
+Exit status is 1 when no profile can be determined, so callers can branch on it.
+"""
+
+import configparser
+import os
+import pathlib
+import sys
+
+
+def find_profile(tb_config: pathlib.Path):
+    """Return the profile Path (joined onto tb_config), or None."""
+    ini = tb_config / "profiles.ini"
+    if not ini.is_file():
+        return None
+    parser = configparser.ConfigParser()
+    parser.read(ini)
+    sections = parser.sections()
+
+    def path_of(section):
+        if not parser.has_option(section, "Path"):
+            return None
+        return tb_config / parser.get(section, "Path")
+
+    for section in sections:
+        path = path_of(section)
+        if path is not None and "default-release" in parser.get(section, "Path", fallback=""):
+            return path
+    for section in sections:
+        path = path_of(section)
+        if path is not None and parser.get(section, "Default", fallback="0") == "1":
+            return path
+    for section in sections:
+        if parser.has_option(section, "Path") and parser.has_option(section, "IsRelative"):
+            return path_of(section)
+    return None
+
+
+def main(argv=None) -> int:
+    config = pathlib.Path(
+        os.environ.get("XDG_CONFIG_HOME", pathlib.Path.home() / ".config")) / "thunderbird"
+    profile = find_profile(config)
+    if profile is None:
+        return 1
+    sys.stdout.write(str(profile) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

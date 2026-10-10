@@ -44,5 +44,26 @@ user_pref("mailnews.default_view_flags", 1); // threaded
 user_pref("mail.show_headers", 1); // normal headers
 user_pref("mail.biff.animate_dock_icon", false);
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+// Let the desktop notification daemon present new-mail alerts (Thunderbird's
+// default), but keep the message preview off the alert — a notification sits on a
+// shared screen, so subject-only is the private choice. Silencing Thunderbird's own
+// sound avoids a second chime on top of the desktop's, and the unread count is
+// worth showing in the badge.
+// Each value here deliberately differs from Thunderbird's built-in default, so it
+// survives into prefs.js rather than being dropped as a no-op.
+user_pref("mail.biff.alert.show_preview", false);
+user_pref("mail.biff.play_sound", false);
+user_pref("mail.biff.use_new_count_in_badge", true);
+
+// ── Identity / account defaults ───────────────────────────────────────────────
+// No signature appended to replies (keeps long threads readable), no "you could
+// encrypt this" reminder, the system GnuPG keyring allowed as an OpenPGP backend,
+// and no start-page tab on launch.
+user_pref("mail.identity.default.sig_on_reply", false);
+user_pref("mail.openpgp.remind_encryption_possible", false);
+user_pref("mail.openpgp.allow_external_gnupg", true);
+user_pref("mailnews.start_page.enabled", false);
+
 // ── Calendar/Tasks ────────────────────────────────────────────────────────────
 user_pref("calendar.view.useSystemColors", false);

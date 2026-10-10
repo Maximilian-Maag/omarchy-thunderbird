@@ -262,7 +262,9 @@ def run_target(repo, target, cfg, tmp_root, dry_run=False, log=print):
     # in the output — the threshold itself is never lowered.
     equiv = {(e.get("line"), e.get("kind")) for e in (target.get("equivalent") or [])}
     survivors = [r for r in results if r["verdict"] == "survived"]
-    equivalent = [r for r in survivors if (r.get("line"), r.get("kind")) in equiv]
+    # the mutant record names this field "operator", not "kind" — matching on "kind" read
+    # a key that does not exist, so the filter silently never fired
+    equivalent = [r for r in survivors if (r.get("line"), r.get("operator")) in equiv]
     counted = [r for r in results if r["verdict"] in ("killed", "survived")
                and r not in equivalent]
     killed = [r for r in counted if r["verdict"] == "killed"]

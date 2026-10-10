@@ -1067,3 +1067,43 @@
 
   --splitter-color: #c0c0c0;
 }
+
+/* ============================================================
+   SUPPLEMENTARY COVERAGE — compose, address book, calendar
+   ------------------------------------------------------------
+   The :root variables above already reach every chrome document
+   (compose, address book and calendar are tabs in the main
+   window), so most of the UI follows the theme for free. These
+   rules cover the few places that paint their own surfaces and do
+   not read the standard variables. Selectors use ids verified
+   against the shipped Thunderbird chrome, and consume the same
+   theme variables, so they follow the active theme too.
+   ============================================================ */
+
+/* Message compose — header block and editor */
+#MsgHeadersToolbar,
+#composeContentBox {
+  background-color: var(--toolbar-bgcolor) !important;
+  color: var(--toolbar-color) !important;
+}
+
+#msgSubject {
+  background-color: var(--thread-pane-background) !important;
+  color: var(--thread-pane-color) !important;
+}
+
+#messageEditor {
+  background-color: var(--message-pane-background) !important;
+}
+
+/* Address book — contacts list */
+#abContactsPanel {
+  background-color: var(--thread-pane-background) !important;
+  color: var(--thread-pane-color) !important;
+}
+
+/* Calendar — the grid paints its own background */
+#calendar-view-box {
+  background-color: var(--thread-pane-background) !important;
+  color: var(--thread-pane-color) !important;
+}

@@ -28,6 +28,63 @@
       "tests": [
         "bash",
         "tests/shell/test_theme_set.sh"
+      ],
+      "equivalent": [
+        {
+          "line": 18,
+          "kind": "or->and",
+          "reason": "PROFILE=$(...) || true -> && true: when the profile finder fails the substitution is the non-final operand of an && list, so bash suppresses set -e exactly as it does for ||; both forms leave PROFILE empty and fall through to the same guard. Not observable."
+        }
+      ]
+    },
+    {
+      "path": "bin/omarchy-tb-render-css",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_render_css"
+      ]
+    },
+    {
+      "path": "bin/omarchy-tb-profile",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_profile"
+      ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-reload",
+      "lang": "shell",
+      "tests": [
+        "bash",
+        "tests/shell/test_reload.sh"
+      ],
+      "equivalent": [
+        {
+          "line": 17,
+          "kind": "or->and",
+          "reason": "PROFILE=$(...) || true -> && true: the failing substitution is the non-final operand of an && list, so set -e is suppressed exactly as for ||; both forms continue with an empty PROFILE and hit the same guard. Not observable."
+        },
+        {
+          "line": 19,
+          "kind": "number±1",
+          "reason": "the mutated digit is the file descriptor in '>&2'; '>&3' only redirects the error message to an unopened fd. Control flow and exit status are unchanged, and no test asserts on the diagnostic stream."
+        }
+      ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-unread",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_unread"
       ]
     }
   ],

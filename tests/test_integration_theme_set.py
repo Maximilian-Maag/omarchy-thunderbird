@@ -66,16 +66,23 @@ class ThemeSetHookCase(unittest.TestCase):
         self.assertEqual(proc.returncode, 0)
         self.assertFalse((self.tb / "ghost-profile").exists())
 
-    def test_existing_userchrome_symlink_is_preserved(self):
+    def test_existing_symlink_is_replaced_without_touching_its_target(self):
+        # A user may already have chrome/userChrome.css symlinked at the plugin's own
+        # stylesheet. The hook must replace that symlink with a real file rather than
+        # writing *through* it — writing through would overwrite the plugin source.
         profile = self.add_profile("abc.default-release")
         chrome = profile / "chrome"
         chrome.mkdir()
-        target = REPO / "themes/userChrome.css"
-        (chrome / "userChrome.css").symlink_to(target)
+        victim = self.root / "plugin-source.css"
+        victim.write_text("/* ORIGINAL PLUGIN SOURCE */\n")
+        (chrome / "userChrome.css").symlink_to(victim)
         proc = self.run_hook("everforest")
-        self.assertEqual(proc.returncode, 0)
-        self.assertTrue((chrome / "userChrome.css").is_symlink())
-        self.assertEqual(os.readlink(chrome / "userChrome.css"), str(target))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        link = chrome / "userChrome.css"
+        self.assertFalse(link.is_symlink(), "symlink should be replaced by a real file")
+        self.assertIn("applied theme = everforest", link.read_text())
+        self.assertEqual(victim.read_text(), "/* ORIGINAL PLUGIN SOURCE */\n",
+                         "the symlink target must be left untouched")
 
 
 if __name__ == "__main__":

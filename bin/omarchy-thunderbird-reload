@@ -1,0 +1,52 @@
+#!/bin/bash
+# omarchy-thunderbird-reload — apply the active theme and restart Thunderbird so the
+# new chrome/userChrome.css takes effect immediately.
+#
+# Thunderbird reads chrome/userChrome.css only at startup, so a theme switch (from
+# `omarchy theme set`) has no visible effect until the app is relaunched. Omarchy's
+# theme-set hook applies the stylesheet straight away; this command is what makes it
+# visible now, at the cost of one restart.
+#
+# Usage: omarchy-thunderbird-reload [theme]
+#   theme  optional slug; defaults to the recorded active theme, then the current
+#          Omarchy theme, then catppuccin.
+set -euo pipefail
+
+PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+PROFILE="$("$PLUGIN_DIR/bin/omarchy-tb-profile" 2>/dev/null)" || true
+if [[ -z "$PROFILE" || ! -d "$PROFILE" ]]; then
+  echo "omarchy-thunderbird: no Thunderbird profile found" >&2
+  exit 1
+fi
+
+CHROME_DIR="$PROFILE/chrome"
+
+# Resolve the theme: explicit argument, then the recorded theme, then Omarchy's
+# current theme, then the bundled fallback.
+THEME="${1:-}"
+if [[ -z "$THEME" ]]; then
+  THEME="$(cat "$CHROME_DIR/omarchy-active-theme" 2>/dev/null || true)"
+fi
+if [[ -z "$THEME" ]]; then
+  THEME="$(omarchy theme current 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr ' ' '-')" || true
+fi
+[[ -z "$THEME" ]] && THEME="catppuccin"
+
+mkdir -p "$CHROME_DIR"
+printf '%s\n' "$THEME" > "$CHROME_DIR/omarchy-active-theme"
+"$PLUGIN_DIR/bin/omarchy-tb-render-css" "$THEME" --output "$CHROME_DIR/userChrome.css"
+"$PLUGIN_DIR/bin/omarchy-tb-render-css" "$THEME" --kind content --output "$CHROME_DIR/userContent.css"
+
+# Restart Thunderbird so it reloads the stylesheet. SIGTERM is Thunderbird's normal
+# shutdown path, so state is flushed before the relaunch.
+if pgrep -x thunderbird >/dev/null 2>&1; then
+  pkill -TERM -x thunderbird >/dev/null 2>&1 || true
+  for _ in $(seq 1 40); do
+    pgrep -x thunderbird >/dev/null 2>&1 || break
+    sleep 0.25
+  done
+  setsid thunderbird >/dev/null 2>&1 &
+fi
+
+echo "omarchy-thunderbird: applied theme '$THEME' (Thunderbird restarted)"

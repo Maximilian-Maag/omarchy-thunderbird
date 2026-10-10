@@ -1,13 +1,17 @@
 # omarchy-thunderbird
 
-[Thunderbird](https://www.thunderbird.net/) configured for [Omarchy](https://omarchy.org/) — all 22 stock themes with automatic switching, privacy defaults, and system-wide mailto registration.
+[Thunderbird](https://www.thunderbird.net/) configured for [Omarchy](https://omarchy.org/) — all 22 stock themes (chrome *and* message body), privacy and notification defaults, an unread-mail bar widget, and system-wide mailto registration.
 
 ## Features
 
 | Feature | Details |
 |---------|---------|
-| **22 Omarchy themes** | Full userChrome.css coverage for every stock theme — switches automatically with `omarchy theme set` |
+| **22 Omarchy themes** | Full chrome + message-body coverage for every stock theme. Applied by rendering the active theme into `userChrome.css`, so it works with **no userChromeJS loader** |
+| **Instant reload** | `omarchy-thunderbird-reload` applies the current theme and restarts Thunderbird so the change is visible now (Thunderbird reads the stylesheet at startup) |
+| **Unread bar widget** | Unread count in the Omarchy bar (`Maximilian-Maag.thunderbird`); click to open Thunderbird |
 | **Privacy defaults** | Remote content blocked, telemetry off, crash reporter disabled |
+| **Notification defaults** | No message preview on alerts, no Thunderbird chime, unread count in the badge |
+| **Identity defaults** | No signature on replies, no OpenPGP reminder, system GnuPG allowed as OpenPGP backend, no start page |
 | **System default** | Registers Thunderbird for mailto, message/rfc822, calendar, vCard at user, `/etc/xdg/`, and Omarchy system level |
 | **Sane UI defaults** | Wide layout, threaded view, date-descending sort |
 | **Policies** | `policies.json` installed to `/usr/lib/thunderbird/distribution/` for system-wide managed prefs |
@@ -34,19 +38,21 @@ The install script:
 1. Installs Thunderbird via `omarchy pkg add`
 2. Finds or creates the default profile
 3. Applies `user.js` preferences (merged non-destructively)
-4. Symlinks `userChrome.css` into the profile chrome dir
-5. Installs `policies.json` into `/usr/lib/thunderbird/distribution/`
-6. Installs the `theme-set` hook for automatic theme switching
-7. Adds Thunderbird to Hyprland autostart (opens on workspace 4)
-8. Sets Thunderbird as the default mail client (user + system levels)
+4. Renders `userChrome.css` + `userContent.css` for the current theme
+5. Installs the unread backend (`omarchy-thunderbird-unread`) onto `PATH`
+6. Installs `policies.json` into `/usr/lib/thunderbird/distribution/`
+7. Installs the `theme-set` hook for automatic theme switching
+8. Adds Thunderbird to Hyprland autostart (opens on workspace 4)
+9. Sets Thunderbird as the default mail client (user + system levels)
 
 ## Themes
 
-Switches automatically:
+Switches with `omarchy theme set` — the hook renders the stylesheet immediately, and the
+change is visible on the next launch:
 
 ```bash
 omarchy theme set nord
-# → Thunderbird picks up the nord palette on next launch / CSS reload
+omarchy-thunderbird-reload     # apply and restart Thunderbird now
 ```
 
 All 22 stock themes supported:
@@ -56,22 +62,67 @@ gruvbox · hackerman · kanagawa · last-horizon · lumon · lupine · matte-bla
 miasma · nord · osaka-jade · retro-82 · ristretto · rose-pine · solitude ·
 tokyo-night · vantablack · white
 
+Thunderbird reads `chrome/userChrome.css` only when it starts, so a theme change lands on
+the next launch. `omarchy-thunderbird-reload` restarts it for you when you want it now; set
+`OMARCHY_THUNDERBIRD_AUTORELOAD=1` to have the `theme-set` hook do that on every switch.
+
+## Unread bar widget
+
+```bash
+omarchy plugin enable Maximilian-Maag.thunderbird
+```
+
+The widget polls `omarchy-thunderbird-unread`, which counts unread messages from the
+profile's mbox `X-Mozilla-Status` read bit — Thunderbird's own on-disk record, no extension
+or connection required:
+
+```bash
+omarchy-thunderbird-unread            # total, e.g. 3
+omarchy-thunderbird-unread --json     # per-folder breakdown
+omarchy-thunderbird-unread --verbose  # human-readable table
+```
+
+Only mbox stores are counted; messages that exist solely on the server (an IMAP account
+with no offline copy) or in a maildir account leave no local read-state file, so they are not
+counted. For the common local / offline case the count is exact.
+
 ## Structure
 
 ```
 omarchy-thunderbird/
 ├── themes/
-│   └── userChrome.css      — all 22 theme palettes via CSS custom properties
+│   └── userChrome.css      — all 22 theme palettes (source of truth for the renderer)
 ├── profile/
 │   └── user.js             — profile preferences (merged on install)
 ├── hooks/
-│   └── theme-set           — omarchy hook: updates active theme on switch
+│   └── theme-set           — omarchy hook: renders + applies the theme on switch
 ├── bin/
-│   ├── policies.json       — managed preferences for /usr/lib/thunderbird/distribution/
-│   └── set-system-default  — privileged script: sets system-wide MIME defaults
+│   ├── omarchy-tb-profile       — locate the Thunderbird profile
+│   ├── omarchy-tb-render-css    — render applied userChrome.css / userContent.css
+│   ├── omarchy-thunderbird-reload — apply the theme and restart Thunderbird
+│   ├── omarchy-thunderbird-unread — unread-message count (bar widget backend)
+│   ├── policies.json            — managed preferences
+│   └── set-system-default       — privileged script: system-wide MIME defaults
+├── shell/
+│   └── BarWidget.qml       — unread-mail bar widget
 ├── install.sh              — one-shot installer
-└── manifest.json           — Omarchy plugin manifest
+└── manifest.json           — Omarchy plugin manifest (mail-client + bar-widget)
 ```
+
+## Testing
+
+Every test kind runs locally and in CI (`bash tools/run_tests.sh`):
+
+| Kind | What it covers |
+|------|----------------|
+| policy as code | `tools/policy_check.py` over the repo |
+| unit | the renderer, profile finder, unread counter, prefs, CSS/policies |
+| regression | the documented preference contract |
+| integration | hook → profile → renderer → rendered stylesheet; unread backend → profile finder |
+| **e2e** | a **real headless Thunderbird** booted against a throwaway profile |
+| shell | the theme-set hook, the reload CLI (stubbed process tools), QML + manifest |
+| js | `profile/user.js` evaluated in a `node:vm` sandbox |
+| mutation | all plugin sources, floor 0.85 |
 
 ## License
 

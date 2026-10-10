@@ -1,7 +1,7 @@
 #!/bin/bash
 # Every test kind this repository promises, in escalating cost order.
 #
-#   policy as code -> unit -> regression -> integration -> js -> shell -> mutation
+#   policy as code -> unit -> regression -> integration -> e2e -> js -> shell -> mutation
 #
 # Locally: `tools/run_tests.sh`. In CI: .github/workflows/test.yml.
 # `SKIP_MUTATION=1` runs everything but the mutation pass (it is the slow one);
@@ -40,6 +40,16 @@ if want integration; then
     run "integration tests (python)" python3 -m unittest discover -s tests -p 'test_integration_*.py' -q
   else
     printf '\n=== integration tests ===\nnot applicable to this plugin (no integration surface)\n'
+  fi
+fi
+
+if want e2e; then
+  shopt -s nullglob
+  e2e_files=(tests/e2e/test_*.sh)
+  if [ ${#e2e_files[@]} -gt 0 ]; then
+    for f in "${e2e_files[@]}"; do
+      run "e2e tests: $(basename "$f")" bash "$f"
+    done
   fi
 fi
 

@@ -23,7 +23,7 @@ function loadPrefs() {
 
 test('the shipped user.js loads and sets the documented prefs', () => {
   const prefs = loadPrefs();
-  assert.ok(Object.keys(prefs).length >= 20, 'user.js should set the documented prefs');
+  assert.ok(Object.keys(prefs).length >= 27, 'user.js should set the documented prefs');
 });
 
 test('userChrome.css theming is enabled', () => {
@@ -51,4 +51,20 @@ test('privacy defaults block remote content and telemetry', () => {
   assert.strictEqual(prefs['permissions.default.image'], 2);
   assert.strictEqual(prefs['datareporting.healthreport.uploadEnabled'], false);
   assert.strictEqual(prefs['toolkit.telemetry.enabled'], false);
+});
+
+test('notification defaults are private and silent', () => {
+  const prefs = loadPrefs();
+  // No message preview on the alert, no Thunderbird sound, unread count in badge.
+  assert.strictEqual(prefs['mail.biff.alert.show_preview'], false);
+  assert.strictEqual(prefs['mail.biff.play_sound'], false);
+  assert.strictEqual(prefs['mail.biff.use_new_count_in_badge'], true);
+});
+
+test('identity / account defaults are applied', () => {
+  const prefs = loadPrefs();
+  assert.strictEqual(prefs['mail.identity.default.sig_on_reply'], false);
+  assert.strictEqual(prefs['mail.openpgp.remind_encryption_possible'], false);
+  assert.strictEqual(prefs['mail.openpgp.allow_external_gnupg'], true);
+  assert.strictEqual(prefs['mailnews.start_page.enabled'], false);
 });

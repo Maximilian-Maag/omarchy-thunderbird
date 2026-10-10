@@ -57,6 +57,36 @@ else
   bad "theme set: helper carries the slug"
 fi
 
+# ── 2b. the applied stylesheet is rendered with the theme inlined into :root ──
+css="$a/thunderbird/abc.default-release/chrome/userChrome.css"
+if [[ -f $css ]]; then ok "theme set: userChrome.css rendered"; else bad "theme set: userChrome.css rendered"; fi
+if grep -q 'applied theme = tokyo-night' "$css" 2>/dev/null; then
+  ok "theme set: rendered css names the applied theme"
+else
+  bad "theme set: rendered css names the applied theme"
+fi
+if grep -q -- '--toolbar-bgcolor: #1a1b26;' "$css" 2>/dev/null; then
+  ok "theme set: rendered css inlines the theme's variables"
+else
+  bad "theme set: rendered css inlines the theme's variables"
+fi
+
+content="$a/thunderbird/abc.default-release/chrome/userContent.css"
+if [[ -f $content ]] && grep -q -- '--tb-bg: #1a1b26;' "$content" 2>/dev/null; then
+  ok "theme set: message body stylesheet rendered from the theme"
+else
+  bad "theme set: message body stylesheet rendered from the theme"
+fi
+
+# ── 2c. an unknown theme keeps the bundled fallback and still renders ─────────
+rc=$(run_hook "$a" "no-such-theme")
+assert_eq "unknown theme: exit status" 0 "$rc"
+if grep -q 'applied theme = catppuccin (fallback)' "$css" 2>/dev/null; then
+  ok "unknown theme: falls back to the bundled palette"
+else
+  bad "unknown theme: falls back to the bundled palette"
+fi
+
 # ── 3. no usable profile directory: exit 0 and create nothing ────────────────
 b="$work/b"
 make_profile "$b" "ghost-profile" no
@@ -81,6 +111,17 @@ if [[ -f "$c/thunderbird/sel.default-release/chrome/omarchy-active-theme" ]]; th
   ok "default-release preferred over Default=1"
 else
   bad "default-release preferred over Default=1"
+fi
+
+# ── 4. no profiles.ini at all: the hook still exits 0 and creates nothing ────
+d="$work/d"
+mkdir -p "$d/thunderbird"
+rc=$(run_hook "$d" "nord")
+assert_eq "no profiles.ini: exit status" 0 "$rc"
+if [[ -e "$d/thunderbird/chrome" ]]; then
+  bad "no profiles.ini: nothing created"
+else
+  ok "no profiles.ini: nothing created"
 fi
 
 printf '\n'

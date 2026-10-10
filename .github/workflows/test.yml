@@ -1,7 +1,7 @@
 name: tests
 
 # Policy as code runs here too, but as part of the full suite: every test kind the
-# plugin promises (unit, regression, integration, js, shell) plus mutation testing.
+# plugin promises (unit, regression, integration, e2e, js, shell) plus mutation testing.
 on:
   push:
   pull_request:
@@ -19,7 +19,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: All test kinds (policy, unit, regression, integration, js, shell, mutation)
+      # The e2e kind boots a real headless Thunderbird against a throwaway profile.
+      # Install it when the runner can; if it genuinely cannot, the e2e test skips
+      # with a notice rather than failing the build.
+      - name: Install Thunderbird (for the e2e kind)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq thunderbird \
+          || echo "thunderbird unavailable on this runner; e2e will skip"
+      - name: All test kinds (policy, unit, regression, integration, e2e, js, shell, mutation)
         run: bash tools/run_tests.sh
         env:
           PYTHONDONTWRITEBYTECODE: "1"

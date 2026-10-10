@@ -15,6 +15,7 @@
       "unit",
       "regression",
       "integration",
+      "e2e",
       "shell",
       "js"
     ],
@@ -23,6 +24,7 @@
       "unit": "tests/test_unit_*.py",
       "regression": "tests/test_regression_*.py",
       "integration": "tests/test_integration_*.py",
+      "e2e": "tests/e2e/test_*.sh",
       "shell": "tests/shell/test_*.sh",
       "js": "tests/js/*.test.js"
     },
@@ -30,7 +32,7 @@
     "mutator": "tools/mutator.py",
     "mutation_config": "tests/mutation.json",
     "ci": ".github/workflows/test.yml",
-    "note": "unit, regression, integration and shell kinds plus node:test JS tests and mutation testing; see tools/run_tests.sh",
+    "note": "unit, regression, integration, e2e (real Thunderbird profile), shell and node:test JS kinds plus mutation testing; see tools/run_tests.sh",
     "min_kill_rate": 0.8,
     "source_globs": [
       "bin/*",

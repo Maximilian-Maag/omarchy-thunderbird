@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Print the number of unread messages in the Thunderbird profile.
+
+Where the number comes from
+---------------------------
+Thunderbird stores local and offline-synced mail as mbox files, and every message
+carries an ``X-Mozilla-Status:`` header whose low bit is the Read flag
+(``nsMsgMessageFlags.Read == 0x0001``). A message is unread when that bit is clear.
+That header is Thunderbird's own on-disk record of read state, so this reads the real
+state of the mailbox rather than guessing — no running process or extension needed.
+
+Scope and honesty
+-----------------
+Only mbox stores are counted. Messages that exist solely on the server (an IMAP
+account with no offline copy) leave no local file to inspect, and maildir accounts
+keep read state in the ``.msf`` summary rather than in the message files, so those
+are not counted here. For the common local / offline case the count is exact.
+
+Output is a single integer by default (so a bar widget can parse it directly);
+``--json`` emits a per-folder breakdown, ``--verbose`` a human-readable table.
+"""
+
+import argparse
+import json
+import pathlib
+import subprocess
+import sys
+
+# The low bit of X-Mozilla-Status is the Read flag (nsMsgMessageFlags.Read).
+READ_FLAG = 0x0001
+
+# Files under Mail/ImapMail that are not message stores.
+SKIP_SUFFIXES = (".msf", ".dat", ".sqlite", ".sqlite-wal", ".sqlite-shm", ".ini", ".json")
+
+STATUS_PREFIX = "X-Mozilla-Status:"
+
+
+def status_is_read(value: str) -> bool:
+    """True when an X-Mozilla-Status hex value has the Read flag set."""
+    try:
+        return bool(int(value.strip(), 16) & READ_FLAG)
+    except ValueError:
+        # An unparseable status is treated as unread: under-counting unread mail
+        # (silently showing 0) is the worse failure for a notification badge.
+        return False
+
+
+def count_file(path: pathlib.Path):
+    """(total, unread) message counts for one mbox file."""
+    total = unread = 0
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                # Only the primary status header carries the Read bit; Status2 holds
+                # unrelated flags and must not be counted as a second message.
+                if line.startswith(STATUS_PREFIX):
+                    total += 1
+                    if not status_is_read(line.split(":", 1)[1]):
+                        unread += 1
+    except OSError:
+        return 0, 0
+    return total, unread
+
+
+def message_stores(profile: pathlib.Path):
+    """Yield the mbox files under a profile's Mail/ and ImapMail/ directories."""
+    for top in ("Mail", "ImapMail"):
+        root = profile / top
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and not path.name.lower().endswith(SKIP_SUFFIXES):
+                yield path
+
+
+def scan_profile(profile: pathlib.Path):
+    """{folder: (total, unread)} for every mbox store in the profile."""
+    folders = {}
+    for path in message_stores(profile):
+        total, unread = count_file(path)
+        if total:
+            folders[str(path.relative_to(profile))] = (total, unread)
+    return folders
+
+
+def resolve_profile(explicit: str):
+    """The profile to scan: an explicit path, else the plugin's profile finder."""
+    if explicit:
+        return pathlib.Path(explicit)
+    finder = pathlib.Path(__file__).resolve().parent / "omarchy-tb-profile"
+    result = subprocess.run([sys.executable, str(finder)], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return pathlib.Path(result.stdout.strip())
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Count unread Thunderbird messages")
+    parser.add_argument("--profile", default=None, help="Thunderbird profile directory")
+    parser.add_argument("--json", action="store_true", help="per-folder JSON output")
+    parser.add_argument("--verbose", action="store_true", help="human-readable table")
+    parser.add_argument("--quiet", action="store_true",
+                        help="print only the integer (default; kept for symmetry)")
+    args = parser.parse_args(argv)
+
+    profile = resolve_profile(args.profile)
+    if profile is None or not profile.is_dir():
+        print("omarchy-thunderbird-unread: no Thunderbird profile found", file=sys.stderr)
+        return 1
+
+    folders = scan_profile(profile)
+    total_unread = sum(unread for _, unread in folders.values())
+
+    if args.json:
+        print(json.dumps({
+            "unread": total_unread,
+            "folders": {name: {"total": total, "unread": unread}
+                        for name, (total, unread) in sorted(folders.items())},
+        }, indent=2))
+    elif args.verbose:
+        for name, (total, unread) in sorted(folders.items()):
+            print("%-40s %4d unread / %4d total" % (name, unread, total))
+        print("total unread: %d" % total_unread)
+    else:
+        print(total_unread)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
