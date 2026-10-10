@@ -2,22 +2,26 @@
   "schemaVersion": 1,
   "id": "Maximilian-Maag.thunderbird",
   "name": "Thunderbird",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "Maximilian-Maag",
   "license": "MIT",
-  "description": "Thunderbird as the default Omarchy mail client — all 22 stock themes, privacy defaults, system-wide mailto registration.",
-  "kinds": ["mail-client"],
+  "description": "Thunderbird as the default Omarchy mail client \u2014 all 22 stock themes, privacy defaults, system-wide mailto registration.",
+  "kinds": [
+    "mail-client"
+  ],
   "activation": "auto",
   "entryPoints": {},
   "omarchy_meta": {
     "installScript": "install.sh",
-    "hooks": ["theme-set"],
+    "hooks": [
+      "theme-set"
+    ],
     "features": [
       "22 Omarchy themes via userChrome.css with automatic switching on omarchy theme set",
       "Privacy defaults: remote content blocked, telemetry off",
       "Sets Thunderbird as default mail client at user, system XDG, and Omarchy levels",
       "Sane UI defaults: wide layout, threaded view, date-descending sort",
-      "Starts at login and opens on workspace 4 (silent — does not steal focus)"
+      "Starts at login and opens on workspace 4 (silent \u2014 does not steal focus)"
     ]
   }
 }
