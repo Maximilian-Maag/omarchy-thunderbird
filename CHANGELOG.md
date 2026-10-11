@@ -2,6 +2,27 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.5.0] — 2026-10-11
+
+### Added
+- **Calendar backend** (`bin/omarchy-thunderbird-calendar`): upcoming events from
+  Thunderbird's `calendar-data/*.sqlite`, with the timestamp unit pinned from source
+  (microseconds — `USECS_PER_SECOND = 1000000` in `CalStorageItemModel`). Cancelled
+  and past events are filtered; recurring events are shown as their master only.
+- **Comms widget**: the bar widget now shows unread mail and the next calendar event
+  (tooltip), polling both backends.
+- **Chat backend** (`bin/omarchy-thunderbird-chat`): reports the chat accounts
+  configured under `chat.prpls.*` in the profile. Account creation stays in
+  Thunderbird's UI — credentials cannot be provisioned blindly, so this reports, it
+  does not invent.
+- Calendar keybinding switched to the verified `thunderbird -calendar` flag (plus a
+  documented note that Chat has no CLI flag).
+
+### Testing
+- unit suites for both backends (synthetic calendar sqlite with the shipped schema;
+  synthetic prefs.js); the e2e widget test now seeds a calendar store and asserts the
+  calendar and chat backends against a real profile. Both CLIs are mutation targets.
+
 ## [1.4.0] — 2026-10-11
 
 ### Added

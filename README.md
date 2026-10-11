@@ -10,6 +10,7 @@
 | **Instant reload** | `omarchy-thunderbird-reload` applies the current theme and restarts Thunderbird so the change is visible now (Thunderbird reads the stylesheet at startup) |
 | **Unread bar widget** | Unread count in the Omarchy bar (`Maximilian-Maag.thunderbird`); click to open Thunderbird |
 | **Guard extension** | Scores every message for scam/phishing risk; tags suspect mail `suspicious` and warns |
+| **Comms widget** | Unread mail + next calendar event in the bar; backends for calendar and chat |
 | **Config as code** | Tags and preferences declared in `config/`, rendered into the profile — reviewable and tested |
 | **Privacy defaults** | Remote content blocked, telemetry off, crash reporter disabled |
 | **Notification defaults** | No message preview on alerts, no Thunderbird chime, unread count in the badge |
@@ -115,6 +116,9 @@ omarchy-thunderbird/
 │   ├── omarchy-thunderbird-xpi        — build/install the guard extension
 │   ├── omarchy-thunderbird-reload     — apply the theme and restart Thunderbird
 │   ├── omarchy-thunderbird-unread     — unread-message count (bar widget backend)
+│   ├── omarchy-thunderbird-calendar   — upcoming calendar events (bar widget backend)
+│   ├── omarchy-thunderbird-chat       — configured chat accounts
+│   ├── omarchy-thunderbird-rules      — validate the auto-sort rules
 │   ├── policies.json            — managed preferences (allowlisted prefs only)
 │   └── set-system-default       — privileged script: system-wide MIME defaults
 ├── shell/
@@ -170,6 +174,21 @@ It scores each displayed message with a pure heuristics engine (`extension/guard
 
 On `warn`/`danger` it tags the message `suspicious` and raises a notification. It is a
 heuristic aid, not a guarantee — it pairs with Thunderbird's own spam detection.
+
+## Calendar and chat
+
+```bash
+omarchy-thunderbird-calendar            # upcoming events (--days N, --json, --count)
+omarchy-thunderbird-chat                # chat accounts configured in the profile
+omarchy-thunderbird-unread              # unread mail count
+```
+
+All three read the real Thunderbird profile. The calendar backend reads
+`calendar-data/*.sqlite` (times are microseconds, per Thunderbird's storage model);
+recurring events show as their master occurrence only. The chat backend reports
+accounts stored under `chat.prpls.*` — creating a chat account needs credentials, so
+that stays a one-time step in Thunderbird's own Chat tab, which has no command-line
+flag (unlike `-mail`, `-calendar`, `-addressbook`, `-compose`).
 
 ## Testing
 

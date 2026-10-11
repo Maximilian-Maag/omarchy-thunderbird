@@ -53,6 +53,35 @@ else
   bad "backend --json is parseable and agrees"
 fi
 
+# ── 1b. calendar backend against a seeded calendar store ─────────────────────
+mkdir -p "$PROFILE/calendar-data"
+python3 - "$PROFILE/calendar-data/local.sqlite" <<'PY'
+import datetime, sqlite3, sys
+start = datetime.datetime.now() + datetime.timedelta(hours=3)
+us = int(start.timestamp()) * 1000000
+c = sqlite3.connect(sys.argv[1])
+c.execute("CREATE TABLE cal_events (id TEXT, cal_id TEXT, title TEXT, event_start INTEGER, event_end INTEGER, ical_status TEXT)")
+c.execute("INSERT INTO cal_events VALUES (?,?,?,?,?,?)",
+          ("1", "cal", "Dentist", us, us + 3600 * 1000000, "CONFIRMED"))
+c.commit(); c.close()
+PY
+count="$(XDG_CONFIG_HOME="$ROOT" "$E2E_REPO/bin/omarchy-thunderbird-calendar" --count 2>/dev/null)"
+assert_eq "calendar backend counts the seeded event" "1" "$count"
+if XDG_CONFIG_HOME="$ROOT" "$E2E_REPO/bin/omarchy-thunderbird-calendar" --json 2>/dev/null \
+   | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["events"][0]["title"] == "Dentist"' 2>/dev/null; then
+  ok "calendar backend --json names the event"
+else
+  bad "calendar backend --json names the event"
+fi
+
+# ── 1c. chat backend runs against a real profile ─────────────────────────────
+if XDG_CONFIG_HOME="$ROOT" "$E2E_REPO/bin/omarchy-thunderbird-chat" --json 2>/dev/null \
+   | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "accounts" in d' 2>/dev/null; then
+  ok "chat backend reports account shape"
+else
+  bad "chat backend reports account shape"
+fi
+
 # ── 2. a REAL Thunderbird boot on the same profile ───────────────────────────
 if command -v thunderbird >/dev/null 2>&1; then
   tb_pid="$(e2e_tb_start "$ROOT" "$PROFILE" 40)"

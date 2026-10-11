@@ -12,7 +12,7 @@ hl.unbind("SUPER + SHIFT + C")
 -- so match on "Thunderbird" for focus.
 o.bind("SUPER + SHIFT + E",       "Email",         { launch = "thunderbird",          focus = "Thunderbird" })
 o.bind("SUPER + SHIFT + ALT + E", "New email",     "thunderbird -compose")
-o.bind("SUPER + SHIFT + C",       "Calendar",      { launch = "thunderbird",          focus = "Thunderbird" })
+o.bind("SUPER + SHIFT + C",       "Calendar",      "thunderbird -calendar")
 
 -- Open Thunderbird on workspace 4 (at login and whenever it starts).
 -- "silent" = move it there without switching the active workspace, so the

@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""List upcoming events from the Thunderbird calendar store.
+
+Thunderbird keeps calendar data in ``<profile>/calendar-data/<cal-id>.sqlite`` with a
+``cal_events`` table. Timestamps there are **microseconds** since the Unix epoch — the
+storage model divides by ``USECS_PER_SECOND = 1000000`` (CalStorageItemModel.sys.mjs) —
+so a raw value of ``1700000000000000`` is 1700000000 seconds.
+
+    omarchy-thunderbird-calendar               # upcoming events, human readable
+    omarchy-thunderbird-calendar --days 1      # just today
+    omarchy-thunderbird-calendar --json        # machine readable
+    omarchy-thunderbird-calendar --count       # number of upcoming events
+
+The database is copied to a temporary directory before reading, because Thunderbird
+holds a lock on the live file while running.
+
+Limitations, stated plainly: recurring events are shown as their master occurrence
+only (expansions live in ``cal_recurrence`` and are not expanded here), and times are
+rendered in the machine's local timezone.
+"""
+
+import argparse
+import datetime
+import json
+import pathlib
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+
+PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
+USECS_PER_SECOND = 1000000
+
+
+def usecs_to_epoch(usecs):
+    """Microseconds-since-epoch (Thunderbird's storage unit) -> epoch seconds."""
+    return int(usecs) // USECS_PER_SECOND
+
+
+def to_datetime(usecs):
+    return datetime.datetime.fromtimestamp(usecs_to_epoch(usecs))
+
+
+def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
+    """Events from one calendar database, or [] if it is not a calendar store.
+
+    The file (and its -wal/-shm siblings) are copied first so a running Thunderbird's
+    lock does not block the read.
+    """
+    staged = workdir / db_path.name
+    for suffix in ("", "-wal", "-shm"):
+        src = pathlib.Path(str(db_path) + suffix)
+        if src.is_file():
+            shutil.copy2(src, str(staged) + suffix)
+    if not staged.is_file():
+        return []
+    events = []
+    try:
+        conn = sqlite3.connect(str(staged))
+        try:
+            rows = conn.execute(
+                "SELECT id, cal_id, title, event_start, event_end, ical_status "
+                "FROM cal_events").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    for eid, cal_id, title, start, end, status in rows:
+        if start is None:
+            continue
+        events.append({
+            "id": eid,
+            "calendar": cal_id,
+            "title": title or "(no title)",
+            "start_usecs": int(start),
+            "end_usecs": int(end) if end is not None else int(start),
+            "status": status or "",
+        })
+    return events
+
+
+def scan_profile(profile: pathlib.Path):
+    """All events across every calendar store in the profile."""
+    events = []
+    data_dir = profile / "calendar-data"
+    if not data_dir.is_dir():
+        return events
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = pathlib.Path(tmp)
+        for db in sorted(data_dir.glob("*.sqlite")):
+            events.extend(load_events(db, workdir))
+    return events
+
+
+def upcoming(events, now=None, days=7):
+    """Non-cancelled events that have not ended, within `days` from now."""
+    now = now or datetime.datetime.now()
+    horizon = now + datetime.timedelta(days=days)
+    keep = []
+    for event in events:
+        if event["status"].upper() == "CANCELLED":
+            continue
+        try:
+            end = to_datetime(event["end_usecs"])
+            start = to_datetime(event["start_usecs"])
+        except (OverflowError, OSError, ValueError):
+            continue
+        if end >= now and start <= horizon:
+            entry = dict(event)
+            entry["start"] = start.isoformat(timespec="minutes")
+            entry["end"] = end.isoformat(timespec="minutes")
+            keep.append(entry)
+    keep.sort(key=lambda e: e["start_usecs"])
+    return keep
+
+
+def resolve_profile(explicit):
+    if explicit:
+        return pathlib.Path(explicit)
+    finder = PLUGIN_DIR / "bin/omarchy-tb-profile"
+    result = subprocess.run([sys.executable, str(finder)], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return pathlib.Path(result.stdout.strip())
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Upcoming Thunderbird calendar events")
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--count", action="store_true")
+    args = parser.parse_args(argv)
+
+    profile = resolve_profile(args.profile)
+    if profile is None or not profile.is_dir():
+        print("omarchy-thunderbird-calendar: no Thunderbird profile found", file=sys.stderr)
+        return 1
+
+    events = upcoming(scan_profile(profile), days=args.days)
+    if args.count:
+        print(len(events))
+    elif args.json:
+        print(json.dumps({"count": len(events), "events": [
+            {"title": e["title"], "start": e["start"], "end": e["end"], "calendar": e["calendar"]}
+            for e in events]}, indent=2))
+    else:
+        if not events:
+            print("No upcoming events.")
+        for event in events:
+            print("%s  %s" % (event["start"], event["title"]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

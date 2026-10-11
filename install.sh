@@ -60,16 +60,18 @@ if [[ -n "$PROFILE" ]]; then
 UCJS
 fi
 
-# ── 4b. Install the unread-count backend on PATH (for the bar widget) ─────────
-BIN_SRC="$PLUGIN_DIR/bin/omarchy-thunderbird-unread"
-BIN_DEST="/usr/local/bin/omarchy-thunderbird-unread"
-if [[ -L "$BIN_DEST" ]] && [[ "$(readlink -f "$BIN_DEST")" == "$(readlink -f "$BIN_SRC")" ]]; then
-  echo "  unread backend already on PATH."
-elif (( EUID == 0 )); then
-  ln -sf "$BIN_SRC" "$BIN_DEST" && echo "  Installed unread backend to $BIN_DEST."
-elif command -v sudo >/dev/null 2>&1; then
-  sudo ln -sf "$BIN_SRC" "$BIN_DEST" && echo "  Installed unread backend to $BIN_DEST."
-fi
+# ── 4b. Install the widget backends on PATH (unread + calendar) ───────────────
+for backend in omarchy-thunderbird-unread omarchy-thunderbird-calendar; do
+  BIN_SRC="$PLUGIN_DIR/bin/$backend"
+  BIN_DEST="/usr/local/bin/$backend"
+  if [[ -L "$BIN_DEST" ]] && [[ "$(readlink -f "$BIN_DEST")" == "$(readlink -f "$BIN_SRC")" ]]; then
+    echo "  $backend already on PATH."
+  elif (( EUID == 0 )); then
+    ln -sf "$BIN_SRC" "$BIN_DEST" && echo "  Installed $backend to $BIN_DEST."
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo ln -sf "$BIN_SRC" "$BIN_DEST" && echo "  Installed $backend to $BIN_DEST."
+  fi
+done
 
 # ── 4c. Build and install the guard extension (unsigned, loads from the profile) ─
 if [[ -n "$PROFILE" ]]; then

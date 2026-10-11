@@ -158,6 +158,26 @@
         "unittest",
         "tests.test_unit_rules"
       ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-calendar",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_calendar"
+      ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-chat",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_chat"
+      ]
     }
   ],
   "exempt": [
