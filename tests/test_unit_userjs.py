@@ -15,15 +15,14 @@ check is skipped, with a notice, when Thunderbird is not present.
 import pathlib
 import re
 import unittest
-import zipfile
+
+try:  # `discover -s tests` puts tests/ on sys.path; `-m unittest tests.x` does not
+    from tb_prefs import thunderbird_prefs, literal as _literal
+except ImportError:  # pragma: no cover - the other invocation style
+    from tests.tb_prefs import thunderbird_prefs, literal as _literal
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 USER_JS = REPO / "profile/user.js"
-
-OMNI_CANDIDATES = [
-    pathlib.Path("/usr/lib/thunderbird/omni.ja"),
-    pathlib.Path("/usr/share/thunderbird/omni.ja"),
-]
 
 # Prefs this plugin sets specifically because their value differs from Thunderbird's
 # default. If any of these ever matches the default it will silently not apply.
@@ -38,56 +37,10 @@ DELIBERATELY_NON_DEFAULT = {
 }
 
 PAIR = re.compile(r'user_pref\(\s*"([^"]+)"\s*,\s*([^)]*?)\s*\)')
-DEFAULT_PAIR = re.compile(r'pref\(\s*"([^"]+)"\s*,\s*([^;\n]*?)\s*\)')
-
-
-def _literal(raw):
-    raw = raw.strip()
-    if raw == "true":
-        return True
-    if raw == "false":
-        return False
-    if re.fullmatch(r"-?\d+", raw):
-        return int(raw)
-    if re.fullmatch(r"-?\d+\.\d+", raw):
-        return float(raw)
-    m = re.fullmatch(r'"(.*)"|\'(.*)\'', raw)
-    if m:
-        return m.group(1) if m.group(1) is not None else m.group(2)
-    return raw
 
 
 def pref_pairs(text):
     return [(k, _literal(v)) for k, v in PAIR.findall(text)]
-
-
-def thunderbird_prefs():
-    """(defaults, referenced) scraped from the installed Thunderbird, else None.
-
-    `defaults` maps a pref to its built-in default value (from `pref("k", v)`).
-    `referenced` is every pref-like quoted string appearing in the shipped JS — a
-    pref Thunderbird reads via getBoolPref() without declaring a default is real but
-    absent from `defaults`, so realness is the union of the two.
-    """
-    omni = next((p for p in OMNI_CANDIDATES if p.is_file()), None)
-    if omni is None:
-        return None
-    defaults = {}
-    referenced = set()
-    pref_like = re.compile(r'"([a-z][A-Za-z0-9_]{2,}(?:\.[A-Za-z0-9_]+)+)"')
-    with zipfile.ZipFile(omni) as archive:
-        for name in archive.namelist():
-            if not name.endswith((".js", ".mjs")):
-                continue
-            try:
-                body = archive.read(name).decode("utf-8", "replace")
-            except (KeyError, OSError):
-                continue
-            for key, raw in DEFAULT_PAIR.findall(body):
-                if key not in defaults and not key.startswith("_"):
-                    defaults[key] = _literal(raw)
-            referenced.update(pref_like.findall(body))
-    return defaults, referenced
 
 
 class UserJsStructureCase(unittest.TestCase):

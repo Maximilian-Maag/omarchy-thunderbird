@@ -2,12 +2,7 @@
   "policies": {
     "DisableTelemetry": true,
     "DisableAppUpdate": false,
-    "DontCheckDefaultClient": true,
-    "NoDefaultBookmarks": true,
-    "OverrideFirstRunPage": "",
-    "OverridePostUpdatePage": "",
     "DisableSystemAddonUpdate": false,
-    "DisableFirefoxAccounts": false,
     "PromptForDownloadLocation": false,
     "BlockAboutConfig": false,
     "DisableDeveloperTools": false,
@@ -17,8 +12,12 @@
       "Locked": []
     },
     "Preferences": {
-      "mail.remote_content.blocked_by_default": {
+      "mailnews.message_display.disable_remote_image": {
         "Value": true,
+        "Status": "default"
+      },
+      "mail.shell.checkDefaultClient": {
+        "Value": false,
         "Status": "default"
       },
       "extensions.autoDisableScopes": {

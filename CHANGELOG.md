@@ -2,6 +2,26 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.8] — 2026-10-11
+
+### Fixed
+- **`policies.json` set five policies Thunderbird does not have, plus one pref that does
+  not exist** — all silently ignored, so the file read as configuration while doing
+  nothing. `mail.remote_content.blocked_by_default` is not a Thunderbird pref (the real
+  one is `mailnews.message_display.disable_remote_image`, whose shipped default is already
+  true), and `DontCheckDefaultClient`, `NoDefaultBookmarks`, `OverrideFirstRunPage`,
+  `OverridePostUpdatePage` and `DisableFirefoxAccounts` are Firefox-only policy names
+  absent from Thunderbird's own `policies-schema.json`. The default-client prompt is now
+  suppressed the way Thunderbird actually supports it — the pref
+  `mail.shell.checkDefaultClient: false`.
+
+### Testing
+- `test_unit_assets` now checks every policy *name* against Thunderbird's shipped
+  `policies-schema.json` (read from omni.ja) and every policy *pref* against its declared
+  defaults and references. The prefix allowlist that existed before only checked a pref's
+  shape, which is why a nonexistent one passed. Both new checks fail on the names fixed
+  here; the TB-defaults scraper moved to `tests/tb_prefs.py`, shared with test_unit_userjs.
+
 ## [1.9.7] — 2026-10-11
 
 ### Added

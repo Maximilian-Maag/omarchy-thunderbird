@@ -10,6 +10,11 @@ import pathlib
 import re
 import unittest
 
+try:  # `discover -s tests` puts tests/ on sys.path; `-m unittest tests.x` does not
+    from tb_prefs import thunderbird_policy_schema, thunderbird_prefs
+except ImportError:  # pragma: no cover - the other invocation style
+    from tests.tb_prefs import thunderbird_policy_schema, thunderbird_prefs
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CSS = REPO / "themes/userChrome.css"
 POLICIES = REPO / "bin/policies.json"
@@ -84,12 +89,43 @@ class PoliciesCase(unittest.TestCase):
         self.assertIs(self.data["DisableTelemetry"], True)
 
     def test_default_client_prompt_is_suppressed(self):
-        # The plugin IS the default client, so Thunderbird must not keep asking.
-        self.assertIs(self.data["DontCheckDefaultClient"], True)
+        # The plugin IS the default client, so Thunderbird must not keep asking. There is
+        # no *policy* for this in Thunderbird; the mechanism is the pref.
+        pref = self.data["Preferences"]["mail.shell.checkDefaultClient"]
+        self.assertIs(pref["Value"], False)
+
+    def test_every_policy_name_is_a_real_thunderbird_policy(self):
+        # Five Firefox-only names (DontCheckDefaultClient, NoDefaultBookmarks,
+        # OverrideFirstRunPage/PostUpdatePage, DisableFirefoxAccounts) sat in this file
+        # doing nothing: Thunderbird ships no handler for them.
+        schema = thunderbird_policy_schema()
+        if schema is None:
+            self.skipTest("Thunderbird omni.ja not found; cannot cross-check policies")
+        unknown = sorted(set(self.data) - schema)
+        self.assertEqual(unknown, [], "not Thunderbird policies: %s" % unknown)
 
     def test_remote_content_is_blocked_by_default(self):
-        pref = self.data["Preferences"]["mail.remote_content.blocked_by_default"]
+        pref = self.data["Preferences"]["mailnews.message_display.disable_remote_image"]
         self.assertIs(pref["Value"], True)
+
+    def test_the_policy_prefs_are_the_ones_we_intend(self):
+        # Pin the set so a pref cannot be added or renamed without a deliberate edit.
+        self.assertEqual(sorted(self.data["Preferences"]),
+                         ["extensions.autoDisableScopes",
+                          "mail.shell.checkDefaultClient",
+                          "mailnews.message_display.disable_remote_image"])
+
+    def test_every_policy_pref_is_a_real_thunderbird_pref(self):
+        # The prefix allowlist below only checks the *shape* of a pref; one Thunderbird
+        # does not define (mail.remote_content.blocked_by_default was exactly that) is
+        # silently ignored, so the policy does nothing while looking like configuration.
+        index = thunderbird_prefs()
+        if index is None:
+            self.skipTest("Thunderbird omni.ja not found; cannot cross-check prefs")
+        defaults, referenced = index
+        for key in self.data.get("Preferences", {}):
+            self.assertTrue(key in defaults or key in referenced,
+                            "policy pref %s is not a pref Thunderbird knows" % key)
 
     def test_every_policy_pref_is_on_the_allowlist(self):
         # A pref outside these prefixes does nothing (TB rejects it) — silent config
