@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "Maximilian-Maag.thunderbird",
   "name": "Thunderbird",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": "Maximilian-Maag",
   "license": "MIT",
   "description": "Thunderbird as the default Omarchy mail client \u2014 all 22 stock themes (chrome and message body), privacy defaults, an unread-count bar widget and system-wide mailto registration.",
@@ -28,7 +28,8 @@
     "features": [
       "All 22 Omarchy themes applied with no userChromeJS loader required",
       "Message-reading pane themed from the same palette (userContent.css)",
-      "Declarative config: tags and preferences in config/, applied to the profile",
+      "Declarative config: tags, preferences and auto-sort rules in config/",
+      "Auto-sort: rules tag and file arriving mail (orders, invoices, newsletters, code)",
       "Guard extension: scam-sender and malicious-link warnings, tags suspect mail",
       "Unread-count bar widget (Maximilian-Maag.thunderbird)",
       "Privacy and notification defaults; external GnuPG allowed for OpenPGP",

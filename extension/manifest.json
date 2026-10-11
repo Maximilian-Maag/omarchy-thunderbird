@@ -20,6 +20,7 @@
     "scripts": [
       "guard-rules.js",
       "guard-engine.js",
+      "sort-engine.js",
       "background.js"
     ]
   }

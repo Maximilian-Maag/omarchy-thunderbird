@@ -49,9 +49,9 @@ class ManifestCase(unittest.TestCase):
     def test_gecko_id_matches_the_install_filename(self):
         self.assertEqual(xpi.extension_id(self.manifest), GECKO_ID)
 
-    def test_background_loads_rules_then_engine_then_background(self):
+    def test_background_loads_engines_then_background(self):
         scripts = self.manifest["background"]["scripts"]
-        self.assertEqual(scripts, ["guard-rules.js", "guard-engine.js", "background.js"])
+        self.assertEqual(scripts, ["guard-rules.js", "guard-engine.js", "sort-engine.js", "background.js"])
         for name in scripts:
             self.assertTrue((EXT / name).is_file(), "missing %s" % name)
 
@@ -75,7 +75,16 @@ class BuildCase(unittest.TestCase):
         self.assertIn("manifest.json", names)
         self.assertIn("guard-engine.js", names)
         self.assertIn("guard-rules.js", names)
+        self.assertIn("sort-engine.js", names)
         self.assertIn("background.js", names)
+
+    def test_xpi_bundles_the_rule_config(self):
+        xpi.build_xpi(EXT, self.out)
+        with zipfile.ZipFile(self.out) as archive:
+            rules = json.loads(archive.read("config/rules.json"))
+            tags = json.loads(archive.read("config/tags.json"))
+        self.assertTrue(rules["rules"])
+        self.assertTrue(tags["tags"])
 
     def test_manifest_in_the_xpi_parses_and_has_the_id(self):
         xpi.build_xpi(EXT, self.out)

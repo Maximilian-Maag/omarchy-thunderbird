@@ -1,0 +1,61 @@
+{
+  "_comment": [
+    "Declarative auto-sort rules for the guard extension's sort engine.",
+    "Each rule is matched against a message; matching rules contribute actions.",
+    "A rule moves a message only if it is the first matching rule with a move_to",
+    "(tags from every matching rule are unioned) so the outcome is order-stable.",
+    "",
+    "match fields (all optional, combined with AND):",
+    "  from_domain    list of domains; matches the From domain or any subdomain",
+    "  from_contains  list of substrings; matches the From header or display name",
+    "  subject_contains list of substrings (case-insensitive)",
+    "  to_contains    list of substrings; matches To/Cc",
+    "  list_id        true = any List-Id header present",
+    "  has_attachment true/false",
+    "actions:",
+    "  move_to   folder name (account-relative)",
+    "  add_tags  list of tag keys that must exist in config/tags.json",
+    "  mark_read bool",
+    "  star      bool"
+  ],
+  "rules": [
+    {
+      "name": "Ordering confirmations",
+      "match": {
+        "subject_contains": ["bestellung", "order confirmation", "your order", "auftragsbestätigung"],
+        "from_domain": ["dhl.de", "dhl.com", "amazon.de", "amazon.com"]
+      },
+      "actions": { "move_to": "Orders", "add_tags": ["receipt"] }
+    },
+    {
+      "name": "Invoices",
+      "match": {
+        "subject_contains": ["rechnung", "invoice", "zahlungsbeleg", "receipt"],
+        "has_attachment": true
+      },
+      "actions": { "move_to": "Invoices", "add_tags": ["invoice"] }
+    },
+    {
+      "name": "Mailing lists and newsletters",
+      "match": { "list_id": true },
+      "actions": { "move_to": "Newsletters", "add_tags": ["newsletter"] }
+    },
+    {
+      "name": "Newsletters by wording",
+      "match": {
+        "subject_contains": ["newsletter", "rundbrief", "wochenrückblick"]
+      },
+      "actions": { "move_to": "Newsletters", "add_tags": ["newsletter"] }
+    },
+    {
+      "name": "Code hosting notifications",
+      "match": { "from_domain": ["github.com", "gitlab.com", "codeberg.org"] },
+      "actions": { "move_to": "Code", "add_tags": ["action"] }
+    },
+    {
+      "name": "Receipts without a matching folder",
+      "match": { "subject_contains": ["kaufbestätigung", "purchase confirmation"] },
+      "actions": { "add_tags": ["receipt"] }
+    }
+  ]
+}

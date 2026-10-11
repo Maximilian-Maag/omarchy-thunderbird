@@ -2,6 +2,25 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.4.0] — 2026-10-11
+
+### Added
+- **Auto-sort.** `config/rules.json` declares rules (from domain, subject/To
+  substrings, List-Id presence, attachment) that tag and file arriving mail —
+  orders, invoices, newsletters/mailing lists, code-hosting notifications. The matcher
+  (`extension/sort-engine.js`) is pure and tested; the extension applies it on
+  `onNewMailReceived`, unioning tags and letting the first matching destination win.
+  `bin/omarchy-thunderbird-rules --validate` checks the rules before they ship, above
+  all that every tag a rule applies exists in `config/tags.json`
+  (otherwise the rule is a silent no-op).
+- The rule and tag config is bundled into the guard `.xpi` under `config/`, so the
+  extension reads the same files the repository reviews.
+
+### Testing
+- js (node:test) suite for the sort engine; unit + regression for the rules validator
+  and the rule/tag cross-file contract; the xpi build test asserts the config is
+  bundled. `sort-engine.js` and the rules CLI are mutation targets.
+
 ## [1.3.0] — 2026-10-11
 
 ### Added

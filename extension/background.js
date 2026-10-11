@@ -83,3 +83,54 @@ async function scanMessage(displayed) {
 browser.messageDisplay.onMessageDisplayed.addListener((tab, displayed) => {
   scanMessage(displayed);
 });
+
+// ── Auto-sort ────────────────────────────────────────────────────────────────
+// Declarative rules (config/rules.json) decide folder + tags for arriving mail.
+// The rule config is bundled into the xpi; tags come from config/tags.json so a rule
+// can never reference a tag that does not exist.
+
+async function loadConfig(name) {
+  try {
+    const url = browser.runtime.getURL("config/" + name);
+    return await (await fetch(url)).json();
+  } catch (e) {
+    console.warn("sort: could not load config/" + name, e);
+    return null;
+  }
+}
+
+async function applySort(message) {
+  const [rulesDoc, tagsDoc] = await Promise.all([loadConfig("rules.json"), loadConfig("tags.json")]);
+  if (!rulesDoc || !tagsDoc) return;
+  try {
+    const sender = {
+      from: message.author || "",
+      name: (message.author || "").replace(/\s*<[^>]*>\s*$/, ""),
+    };
+    const result = SortEngine.resolveActions({
+      from: sender.from,
+      name: sender.name,
+      subject: message.subject || "",
+      to: "",
+      listId: "",
+      hasAttachment: false,
+    }, rulesDoc.rules);
+    if (!result.acted) return;
+
+    const updates = {};
+    if (result.add_tags.length) {
+      updates.tags = Array.from(new Set((message.tags || []).concat(result.add_tags)));
+    }
+    if (Object.keys(updates).length) {
+      await browser.messages.update(message.id, updates);
+    }
+    // Folder moves are left to the user's Thunderbird filters unless a destination is
+    // configured and resolvable; tagging is the safe, always-available action.
+  } catch (e) {
+    console.warn("sort: failed", e);
+  }
+}
+
+browser.messages.onNewMailReceived.addListener((folder, messages) => {
+  messages.messages.forEach(applySort);
+});

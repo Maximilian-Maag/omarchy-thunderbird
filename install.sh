@@ -73,9 +73,10 @@ fi
 
 # ── 4c. Build and install the guard extension (unsigned, loads from the profile) ─
 if [[ -n "$PROFILE" ]]; then
+  "$PLUGIN_DIR/bin/omarchy-thunderbird-rules" --validate
   "$PLUGIN_DIR/bin/omarchy-thunderbird-xpi" --install --profile "$PROFILE" \
     --out "$PLUGIN_DIR/build/omarchy-thunderbird-guard.xpi" >/dev/null
-  echo "  Installed guard extension (scam/link warnings)."
+  echo "  Installed guard extension (scam/link warnings + auto-sort)."
 fi
 
 # ── 5. Install policies.json for system-wide managed preferences ──────────────

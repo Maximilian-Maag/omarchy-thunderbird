@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Validate the declarative auto-sort rules in config/rules.json.
+
+The extension's sort engine (extension/sort-engine.js) trusts its config, so the
+config must be checked before it ships: well-formed rules, only known match/action
+keys, and — the one that actually bites — every tag a rule applies must exist in
+config/tags.json, or the rule silently does nothing the user can see.
+
+    omarchy-thunderbird-rules --validate          # check config/rules.json + tags.json
+    omarchy-thunderbird-rules --validate --json   # machine-readable result
+
+Exit status is 1 when any problem is found.
+"""
+
+import argparse
+import json
+import pathlib
+import sys
+
+PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
+
+MATCH_KEYS = {"from_domain", "from_contains", "subject_contains", "to_contains",
+              "list_id", "has_attachment"}
+ACTION_KEYS = {"move_to", "add_tags", "mark_read", "star"}
+LIST_MATCH_KEYS = {"from_domain", "from_contains", "subject_contains", "to_contains"}
+
+
+def load_json(path: pathlib.Path):
+    return json.loads(path.read_text())
+
+
+def tag_keys(tags_path: pathlib.Path):
+    return {tag["key"] for tag in load_json(tags_path).get("tags", [])}
+
+
+def validate_rules(rules, known_tags):
+    """Return a list of human-readable problems (empty when the rules are valid)."""
+    problems = []
+    if not isinstance(rules, list) or not rules:
+        return ["rules.json: 'rules' must be a non-empty list"]
+    seen = set()
+    for index, rule in enumerate(rules):
+        where = "rules[%d]" % index
+        if not isinstance(rule, dict):
+            problems.append("%s is not an object" % where)
+            continue
+        name = rule.get("name")
+        if not str(name or "").strip():
+            problems.append("%s has no name" % where)
+        elif name in seen:
+            problems.append("%s has a duplicate name %r" % (where, name))
+        else:
+            seen.add(name)
+
+        match = rule.get("match")
+        if not isinstance(match, dict):
+            problems.append("%s: 'match' must be an object" % where)
+            match = {}
+        for key in match:
+            if key not in MATCH_KEYS:
+                problems.append("%s: unknown match key %r" % (where, key))
+            elif key in LIST_MATCH_KEYS and not isinstance(match[key], list):
+                problems.append("%s: match.%s must be a list" % (where, key))
+
+        actions = rule.get("actions")
+        if not isinstance(actions, dict):
+            problems.append("%s: 'actions' must be an object" % where)
+            continue
+        for key in actions:
+            if key not in ACTION_KEYS:
+                problems.append("%s: unknown action key %r" % (where, key))
+        if "move_to" in actions and not str(actions["move_to"] or "").strip():
+            problems.append("%s: move_to is empty" % where)
+        for tag in actions.get("add_tags", []):
+            if tag not in known_tags:
+                problems.append("%s: add_tags references unknown tag %r (not in tags.json)" % (where, tag))
+    return problems
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Validate auto-sort rules")
+    parser.add_argument("--validate", action="store_true")
+    parser.add_argument("--config-dir", default=str(PLUGIN_DIR / "config"))
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    config = pathlib.Path(args.config_dir)
+    try:
+        rules = load_json(config / "rules.json").get("rules", [])
+    except (OSError, ValueError) as exc:
+        print("omarchy-thunderbird-rules: %s" % exc, file=sys.stderr)
+        return 1
+    try:
+        known = tag_keys(config / "tags.json")
+    except (OSError, ValueError) as exc:
+        print("omarchy-thunderbird-rules: tags.json: %s" % exc, file=sys.stderr)
+        return 1
+
+    problems = validate_rules(rules, known)
+    if args.json:
+        print(json.dumps({"ok": not problems, "rules": len(rules), "problems": problems}, indent=2))
+    elif problems:
+        for problem in problems:
+            print("  FAIL %s" % problem)
+    else:
+        print("omarchy-thunderbird-rules: %d rule(s) valid against %d tag(s)"
+              % (len(rules), len(known)))
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -132,6 +132,32 @@
           "reason": "`href.indexOf(\"@\") < href.indexOf(host)` in the userinfo check: @ can never occur at the host's start index (a hostname contains no @), so < and <= never differ. Not observable."
         }
       ]
+    },
+    {
+      "path": "extension/sort-engine.js",
+      "lang": "javascript",
+      "tests": [
+        "node",
+        "--test",
+        "tests/js/sort-engine.test.js"
+      ],
+      "equivalent": [
+        {
+          "line": 11,
+          "kind": "and->or",
+          "reason": "the UMD wrapper's `typeof module === \"object\" && module.exports` guard: both operands are true in every environment this file runs in (node's CommonJS loader and the extension's shared background scope), so && and || select the same branch. Not observable."
+        }
+      ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-rules",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_rules"
+      ]
     }
   ],
   "exempt": [

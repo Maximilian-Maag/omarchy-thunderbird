@@ -96,12 +96,14 @@ omarchy-thunderbird/
 │   └── userChrome.css      — all 22 theme palettes (source of truth for the renderer)
 ├── config/
 │   ├── tags.json           — declarative tag definitions
-│   └── settings.json       — declarative preference overrides
+│   ├── settings.json       — declarative preference overrides
+│   └── rules.json          — declarative auto-sort rules
 ├── extension/
 │   ├── manifest.json       — guard WebExtension manifest
 │   ├── guard-engine.js     — pure scam/phishing scoring engine
 │   ├── guard-rules.js      — shortener/TLD/brand lists and thresholds
-│   └── background.js       — Thunderbird wiring (messageDisplay → engine → tag/warn)
+│   ├── sort-engine.js      — pure auto-sort rule matcher
+│   └── background.js       — Thunderbird wiring (display → guard; new mail → sort)
 ├── profile/
 │   └── user.js             — base profile preferences
 ├── hooks/
@@ -133,10 +135,27 @@ bin/omarchy-thunderbird-apply              # write it into the profile
 
 - `config/tags.json` — tag keys, names and colours → `mailnews.tags.<key>.{tag,color}`
 - `config/settings.json` — preference overrides
+- `config/rules.json` — auto-sort rules (see below)
 
 The merge is idempotent and preserves any pref you added by hand. A unit test checks
 every configured pref actually differs from Thunderbird's built-in default (a pref equal
 to the default is dropped from `prefs.js` and does nothing).
+
+## Auto-sort
+
+`config/rules.json` declares rules that tag and file arriving mail — orders, invoices,
+newsletters/mailing lists, code-hosting notifications out of the box. Each rule matches
+on From domain/substring, subject/To substrings, a List-Id header, or attachment
+presence. Matching rules union their tags; the first matching destination wins, so the
+result is order-stable.
+
+```bash
+bin/omarchy-thunderbird-rules --validate   # check rules against the tag definitions
+```
+
+Validation matters because a rule that tags with a tag that does not exist in
+`config/tags.json` is a silent no-op. The engine (`extension/sort-engine.js`) is pure
+and exhaustively tested; the extension applies it on new mail.
 
 ## Guard extension
 
