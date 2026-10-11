@@ -189,8 +189,9 @@ expands recurring events from `cal_recurrence.icalString` — a weekly meeting s
 next occurrence, not a stale master date. A single occurrence you reschedule (a detached
 exception) shows at its new time and its original slot is suppressed, so a moved meeting
 does not appear twice. Supported RRULE subset: FREQ
-(DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; anything else
-falls back to the master occurrence. The chat backend reports accounts stored under
+(DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; cancelled
+occurrences (EXDATE) are excluded and extra ones (RDATE) added; anything else falls
+back to the master occurrence. The chat backend reports accounts stored under
 `chat.prpls.*` — creating a chat account needs credentials, so that stays a one-time
 step in Thunderbird's own Chat tab, which has no command-line flag (unlike `-mail`,
 `-calendar`, `-addressbook`, `-compose`).

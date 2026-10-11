@@ -323,6 +323,85 @@ class DetachedExceptionCase(unittest.TestCase):
         self.assertEqual([o["title"] for o in occ], ["Orphan"])
 
 
+class ExdateCase(unittest.TestCase):
+    """Cal_recurrence holds one element per row: a cancelled occurrence adds EXDATE row.
+
+    The trap: reading the rows one-by-one and overwriting means the EXDATE row (which
+    has no RRULE) wipes the rule, so a series with one cancelled occurrence loses its
+    recurrence entirely.
+    """
+
+    def ical(self, when):
+        return when.strftime("%Y%m%dT%H%M%S")
+
+    def test_parse_datetime_list_handles_multiple_and_parameters(self):
+        found = cal.parse_datetime_list("EXDATE;TZID=Europe/Berlin:20300603T090000Z,20300610T090000Z")
+        self.assertEqual([d.day for d in found], [3, 10])
+
+    def test_parse_datetime_list_ignores_unparseable_values(self):
+        self.assertEqual(cal.parse_datetime_list("EXDATE:garbage"), [])
+
+    def test_two_rows_keep_both_the_rule_and_the_exdate(self):
+        rows = [("r1", "BEGIN:VEVENT\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT"),
+                ("r1", "EXDATE:20300610T090000Z")]
+        combined = cal.parse_recurrence_rows(rows)
+        self.assertEqual(combined["r1"]["rule"]["FREQ"], "WEEKLY")
+        self.assertEqual(len(combined["r1"]["exdate"]), 1)
+
+    def test_rdate_is_collected(self):
+        combined = cal.parse_recurrence_rows([("r1", "RDATE:20300605T090000Z")])
+        self.assertEqual(len(combined["r1"]["rdate"]), 1)
+
+    def test_an_exdate_removes_that_occurrence_but_keeps_the_series(self):
+        now = datetime.datetime.now()
+        master = now - datetime.timedelta(days=6, hours=22)
+        skipped = master + datetime.timedelta(days=7)   # ~2h from now
+        events = [("r1", "cal", "Weekly", usecs(master),
+                   usecs(master + datetime.timedelta(minutes=30)), "CONFIRMED")]
+        recurrences = [("r1", "RRULE:FREQ=WEEKLY"), ("r1", "EXDATE:" + self.ical(skipped))]
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, events, recurrences=recurrences)
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        self.assertIsNotNone(loaded[0]["rule"], "the RRULE row must survive the EXDATE row")
+        occ = cal.upcoming(loaded, days=14)
+        starts = [datetime.datetime.fromisoformat(o["start"]) for o in occ]
+        self.assertNotIn(skipped.replace(second=0, microsecond=0), starts)
+        self.assertEqual(len(starts), 1, "the following week's occurrence must remain")
+
+    def test_an_rdate_adds_an_extra_occurrence(self):
+        now = datetime.datetime.now()
+        master = now - datetime.timedelta(days=6, hours=22)
+        extra = master + datetime.timedelta(days=8)   # between the two weekly slots
+        events = [("r1", "cal", "Weekly", usecs(master),
+                   usecs(master + datetime.timedelta(minutes=30)), "CONFIRMED")]
+        recurrences = [("r1", "RRULE:FREQ=WEEKLY"), ("r1", "RDATE:" + self.ical(extra))]
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, events, recurrences=recurrences)
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        starts = [datetime.datetime.fromisoformat(o["start"]) for o in cal.upcoming(loaded, days=14)]
+        self.assertEqual(len(starts), 3)  # two weekly occurrences + the RDATE
+        self.assertIn(extra.replace(second=0, microsecond=0), starts)
+
+    def test_an_rdate_on_a_normal_slot_does_not_duplicate_it(self):
+        now = datetime.datetime.now()
+        master = now - datetime.timedelta(days=6, hours=22)
+        same_slot = master + datetime.timedelta(days=7)
+        events = [("r1", "cal", "Weekly", usecs(master),
+                   usecs(master + datetime.timedelta(minutes=30)), "CONFIRMED")]
+        recurrences = [("r1", "RRULE:FREQ=WEEKLY"), ("r1", "RDATE:" + self.ical(same_slot))]
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, events, recurrences=recurrences)
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        starts = [o["start"] for o in cal.upcoming(loaded, days=14)]
+        self.assertEqual(len(starts), len(set(starts)))
+
+
 class RecurrenceBoundaryCase(unittest.TestCase):
     def setUp(self):
         self.start = datetime.datetime(2030, 6, 3, 9, 0)  # a Monday

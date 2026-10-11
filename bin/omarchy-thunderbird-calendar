@@ -23,9 +23,10 @@ The database is copied to a temporary directory before reading, because Thunderb
 holds a lock on the live file while running.
 
 Supported RRULE subset: FREQ (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL,
-BYDAY and BYMONTHDAY. A rule using other parts is not expanded (that event falls back
-to its master occurrence). Times are rendered in the machine's local timezone, and
-UNTIL is compared as a naive timestamp.
+BYDAY and BYMONTHDAY. Cancelled occurrence days (EXDATE) are excluded and extra ones
+(RDATE) included; a rule using other parts is not expanded (that event falls back to
+its master occurrence). Times are rendered in the machine's local timezone, and UNTIL
+and EXDATE are compared as naive timestamps.
 """
 
 import argparse
@@ -75,6 +76,47 @@ def parse_rrule(ical_string):
             rule[key.upper()] = val
         return rule or None
     return None
+
+
+def parse_datetime_list(line):
+    """'EXDATE;TZID=X:20260605T090000Z,20260612T090000Z' -> [naive datetimes].
+
+    Anything from the first colon on is the value; date-time parameters (TZID etc.)
+    come before it and are ignored, as are values we cannot parse.
+    """
+    if ":" not in line:
+        return []
+    found = []
+    for part in line.split(":", 1)[1].split(","):
+        parsed = parse_until(part.strip())
+        if parsed is not None:
+            found.append(parsed)
+    return found
+
+
+def parse_recurrence_rows(rows):
+    """Combine cal_recurrence rows into {item_id: {rule, exdate, rdate}}.
+
+    Thunderbird stores one recurrence *element* per row — the RRULE, and separately
+    each EXDATE/RDATE — all sharing the item_id, so a row-by-row overwrite would lose
+    the RRULE as soon as the event also had a cancelled occurrence.
+    """
+    combined = {}
+    for item_id, ical in rows:
+        text = unfold(ical or "")
+        entry = combined.setdefault(item_id, {"rule": None, "exdate": set(), "rdate": []})
+        rule = parse_rrule(text)
+        if rule:
+            entry["rule"] = rule
+        for line in text.splitlines():
+            line = line.strip()
+            upper = line.upper()
+            if upper.startswith("EXDATE"):
+                for moment in parse_datetime_list(line):
+                    entry["exdate"].add(int(moment.timestamp()))
+            elif upper.startswith("RDATE"):
+                entry["rdate"].extend(parse_datetime_list(line))
+    return combined
 
 
 def parse_until(value):
@@ -221,13 +263,12 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
             rows = conn.execute(
                 "SELECT id, cal_id, title, event_start, event_end, ical_status, recurrence_id "
                 "FROM cal_events").fetchall()
-            rules = {}
+            recs = {}
             try:
-                for item_id, ical in conn.execute(
-                        "SELECT item_id, icalString FROM cal_recurrence"):
-                    rules[item_id] = parse_rrule(ical)
+                recs = parse_recurrence_rows(conn.execute(
+                    "SELECT item_id, icalString FROM cal_recurrence").fetchall())
             except sqlite3.Error:
-                rules = {}
+                recs = {}
         finally:
             conn.close()
     except sqlite3.Error:
@@ -253,7 +294,10 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
             event["rule"] = None
             exceptions.append(event)
         else:
-            event["rule"] = rules.get(eid)
+            info = recs.get(eid) or {}
+            event["rule"] = info.get("rule")
+            event["exdate"] = info.get("exdate") or set()
+            event["rdate"] = info.get("rdate") or []
             masters[(cal_id, eid)] = event
 
     # Tell each master which of its occurrence slots an exception has taken over.
@@ -295,12 +339,16 @@ def _occurrences_of(event, horizon, limit=MAX_OCCURRENCES):
     if not starts:
         # Unsupported rule: fall back to the master occurrence rather than hiding it.
         return [(master_start, master_start + duration)]
-    # Drop the slots a detached exception has taken over; the exception itself is a
-    # separate event in the list and is emitted at its new time.
-    taken = event.get("exceptions") or set()
-    if taken:
-        starts = [s for s in starts if int(s.timestamp()) not in taken]
-    return [(s, s + duration) for s in starts]
+    # Drop the slots an exception has taken over (it is emitted at its new time as a
+    # separate event) and any occurrence explicitly excluded with an EXDATE; then add
+    # any RDATE. Occurrences land in a set first, so an RDATE on an existing slot does
+    # not duplicate it.
+    excluded = set(event.get("exceptions") or ()) | set(event.get("exdate") or ())
+    starts = [s for s in starts if int(s.timestamp()) not in excluded]
+    for moment in event.get("rdate") or []:
+        if master_start <= moment <= horizon and int(moment.timestamp()) not in excluded:
+            starts.append(moment)
+    return [(s, s + duration) for s in sorted(set(starts))]
 
 
 def upcoming(events, now=None, days=7):

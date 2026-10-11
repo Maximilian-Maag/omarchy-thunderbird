@@ -2,6 +2,25 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.8.0] — 2026-10-11
+
+### Fixed
+- **One cancelled occurrence of a series erased the whole recurrence.** Thunderbird
+  stores recurrence *elements* one per `cal_recurrence` row — the `RRULE`, and separately
+  each `EXDATE`/`RDATE` (CalStorageItemModel handles `RDATE`/`EXDATE`/`RRULE` as distinct
+  item types). Reading the rows one-by-one and overwriting meant the `EXDATE` row, which
+  carries no `RRULE`, wiped the rule, so an event with a single deleted occurrence
+  stopped recurring and was shown as its master date alone.
+
+  The rows are now combined per `item_id`: the `RRULE` is taken from whichever row has
+  it, `EXDATE`s suppress those occurrences, and `RDATE`s add extra ones (deduplicated
+  against the normal slots).
+
+### Testing
+- Unit cases for combining rows (rule survives an EXDATE row), EXDATE suppression
+  keeping the series, RDATE addition, and RDATE-on-a-normal-slot deduplication.
+  `bin/omarchy-thunderbird-calendar` remains the mutation target.
+
 ## [1.7.0] — 2026-10-11
 
 ### Fixed
