@@ -6,6 +6,11 @@ Thunderbird keeps calendar data in ``<profile>/calendar-data/<cal-id>.sqlite`` w
 storage model divides by ``USECS_PER_SECOND = 1000000`` (CalStorageItemModel.sys.mjs) —
 so a raw value of ``1700000000000000`` is 1700000000 seconds.
 
+Recurring events store their RRULE in ``cal_recurrence.icalString`` (keyed by
+``item_id``); those are expanded here rather than shown as their master date, because a
+weekly meeting whose master is three months old would otherwise look like a stale past
+event.
+
     omarchy-thunderbird-calendar               # upcoming events, human readable
     omarchy-thunderbird-calendar --days 1      # just today
     omarchy-thunderbird-calendar --json        # machine readable
@@ -14,15 +19,18 @@ so a raw value of ``1700000000000000`` is 1700000000 seconds.
 The database is copied to a temporary directory before reading, because Thunderbird
 holds a lock on the live file while running.
 
-Limitations, stated plainly: recurring events are shown as their master occurrence
-only (expansions live in ``cal_recurrence`` and are not expanded here), and times are
-rendered in the machine's local timezone.
+Supported RRULE subset: FREQ (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL,
+BYDAY and BYMONTHDAY. A rule using other parts is not expanded (that event falls back
+to its master occurrence). Times are rendered in the machine's local timezone, and
+UNTIL is compared as a naive timestamp.
 """
 
 import argparse
+import calendar as _calendar
 import datetime
 import json
 import pathlib
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -31,6 +39,8 @@ import tempfile
 
 PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
 USECS_PER_SECOND = 1000000
+WEEKDAYS = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
+MAX_OCCURRENCES = 500
 
 
 def usecs_to_epoch(usecs):
@@ -40,6 +50,152 @@ def usecs_to_epoch(usecs):
 
 def to_datetime(usecs):
     return datetime.datetime.fromtimestamp(usecs_to_epoch(usecs))
+
+
+def unfold(text):
+    """Undo RFC 5545 line folding (a continuation line begins with space or tab)."""
+    return re.sub(r"\r?\n[ \t]", "", text or "")
+
+
+def parse_rrule(ical_string):
+    """The RRULE of an iCalendar blob as a dict, or None when there is not one."""
+    for line in unfold(ical_string).splitlines():
+        line = line.strip()
+        if not line.upper().startswith("RRULE"):
+            continue
+        value = line.split(":", 1)[1] if ":" in line else ""
+        rule = {}
+        for part in value.split(";"):
+            if "=" not in part:
+                continue
+            key, _, val = part.partition("=")
+            rule[key.upper()] = val
+        return rule or None
+    return None
+
+
+def parse_until(value):
+    """RRULE UNTIL -> naive datetime. Accepts YYYYMMDD and YYYYMMDDTHHMMSSZ."""
+    raw = value.strip().rstrip("Z")
+    for fmt in ("%Y%m%dT%H%M%S", "%Y%m%d"):
+        try:
+            return datetime.datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _weekly_occurrences(start, interval, byday, horizon, limit):
+    out = []
+    week_start = start - datetime.timedelta(days=start.weekday())
+    days = sorted(WEEKDAYS[d] for d in byday if d in WEEKDAYS) if byday else [start.weekday()]
+    step = 0
+    while len(out) < limit:
+        base = week_start + datetime.timedelta(weeks=step * interval)
+        if base > horizon:
+            break
+        for offset in days:
+            occ = base + datetime.timedelta(days=offset)
+            if occ >= start and occ <= horizon:
+                out.append(occ)
+                if len(out) >= limit:
+                    break
+        step += 1
+    return sorted(out)
+
+
+def _daily_occurrences(start, interval, byday, horizon, limit):
+    out = []
+    day = start
+    while day <= horizon and len(out) < limit:
+        if not byday or day.weekday() in [WEEKDAYS[d] for d in byday if d in WEEKDAYS]:
+            out.append(day)
+        day += datetime.timedelta(days=interval)
+    return out
+
+
+def _monthly_occurrences(start, interval, bymonthday, horizon, limit):
+    out = []
+    days = bymonthday or [start.day]
+    year, month, step = start.year, start.month, 0
+    while len(out) < limit:
+        y = year + (month - 1 + step * interval) // 12
+        m = (month - 1 + step * interval) % 12 + 1
+        first = datetime.datetime(y, m, 1)
+        if first > horizon:
+            break
+        for day in days:
+            try:
+                # Preserve the event's time-of-day (and tz-naivity); only move the date.
+                occ = start.replace(year=y, month=m, day=day)
+            except ValueError:
+                continue
+            if occ >= start and occ <= horizon:
+                out.append(occ)
+                if len(out) >= limit:
+                    break
+        step += 1
+    return sorted(out)
+
+
+def _yearly_occurrences(start, interval, horizon, limit):
+    out = []
+    year = start.year
+    while len(out) < limit:
+        try:
+            occ = start.replace(year=year)
+        except ValueError:  # Feb 29 in a non-leap year
+            year += interval
+            continue
+        if occ > horizon:
+            break
+        if occ >= start:
+            out.append(occ)
+        year += interval
+    return out
+
+
+def expand_occurrences(start, rule, horizon, limit=MAX_OCCURRENCES):
+    """Occurrences of a recurring event from `start` up to `horizon` (naive datetimes).
+
+    Returns [] for a rule with an unsupported FREQ, so the caller falls back to the
+    master occurrence.
+    """
+    if not rule:
+        return [start]
+    freq = str(rule.get("FREQ", "")).upper()
+    try:
+        interval = max(1, int(rule.get("INTERVAL", 1)))
+    except (TypeError, ValueError):
+        interval = 1
+    byday = [d.strip().upper() for d in rule.get("BYDAY", "").split(",") if d.strip()]
+    bymonthday = []
+    for raw in rule.get("BYMONTHDAY", "").split(","):
+        raw = raw.strip()
+        if raw.lstrip("-").isdigit():
+            bymonthday.append(int(raw))
+
+    if freq == "DAILY":
+        found = _daily_occurrences(start, interval, byday, horizon, limit)
+    elif freq == "WEEKLY":
+        found = _weekly_occurrences(start, interval, byday, horizon, limit)
+    elif freq == "MONTHLY":
+        found = _monthly_occurrences(start, interval, bymonthday, horizon, limit)
+    elif freq == "YEARLY":
+        found = _yearly_occurrences(start, interval, horizon, limit)
+    else:
+        return []
+
+    count = rule.get("COUNT")
+    if count is not None:
+        try:
+            found = found[:max(0, int(count))]
+        except (TypeError, ValueError):
+            pass
+    until = parse_until(rule["UNTIL"]) if "UNTIL" in rule else None
+    if until is not None:
+        found = [o for o in found if o <= until]
+    return found
 
 
 def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
@@ -62,6 +218,13 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
             rows = conn.execute(
                 "SELECT id, cal_id, title, event_start, event_end, ical_status "
                 "FROM cal_events").fetchall()
+            rules = {}
+            try:
+                for item_id, ical in conn.execute(
+                        "SELECT item_id, icalString FROM cal_recurrence"):
+                    rules[item_id] = parse_rrule(ical)
+            except sqlite3.Error:
+                rules = {}
         finally:
             conn.close()
     except sqlite3.Error:
@@ -76,6 +239,7 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
             "start_usecs": int(start),
             "end_usecs": int(end) if end is not None else int(start),
             "status": status or "",
+            "rule": rules.get(eid),
         })
     return events
 
@@ -93,24 +257,35 @@ def scan_profile(profile: pathlib.Path):
     return events
 
 
+def _occurrences_of(event, horizon, limit=MAX_OCCURRENCES):
+    """Concrete (start, end) datetimes for an event, expanding recurrence if any."""
+    master_start = to_datetime(event["start_usecs"])
+    duration = to_datetime(event["end_usecs"]) - master_start
+    rule = event.get("rule")
+    if not rule:
+        return [(master_start, master_start + duration)]
+    starts = expand_occurrences(master_start, rule, horizon, limit)
+    if not starts:
+        # Unsupported rule: fall back to the master occurrence rather than hiding it.
+        return [(master_start, master_start + duration)]
+    return [(s, s + duration) for s in starts]
+
+
 def upcoming(events, now=None, days=7):
-    """Non-cancelled events that have not ended, within `days` from now."""
+    """Non-cancelled occurrences that have not ended, within `days` from now."""
     now = now or datetime.datetime.now()
     horizon = now + datetime.timedelta(days=days)
     keep = []
     for event in events:
         if event["status"].upper() == "CANCELLED":
             continue
-        try:
-            end = to_datetime(event["end_usecs"])
-            start = to_datetime(event["start_usecs"])
-        except (OverflowError, OSError, ValueError):
-            continue
-        if end >= now and start <= horizon:
-            entry = dict(event)
-            entry["start"] = start.isoformat(timespec="minutes")
-            entry["end"] = end.isoformat(timespec="minutes")
-            keep.append(entry)
+        for start, end in _occurrences_of(event, horizon):
+            if end >= now and start <= horizon:
+                entry = dict(event)
+                entry["start"] = start.isoformat(timespec="minutes")
+                entry["end"] = end.isoformat(timespec="minutes")
+                entry["start_usecs"] = int(start.timestamp()) * USECS_PER_SECOND
+                keep.append(entry)
     keep.sort(key=lambda e: e["start_usecs"])
     return keep
 

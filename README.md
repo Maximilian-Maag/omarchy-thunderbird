@@ -184,11 +184,14 @@ omarchy-thunderbird-unread              # unread mail count
 ```
 
 All three read the real Thunderbird profile. The calendar backend reads
-`calendar-data/*.sqlite` (times are microseconds, per Thunderbird's storage model);
-recurring events show as their master occurrence only. The chat backend reports
-accounts stored under `chat.prpls.*` — creating a chat account needs credentials, so
-that stays a one-time step in Thunderbird's own Chat tab, which has no command-line
-flag (unlike `-mail`, `-calendar`, `-addressbook`, `-compose`).
+`calendar-data/*.sqlite` (times are microseconds, per Thunderbird's storage model) and
+expands recurring events from `cal_recurrence.icalString` — a weekly meeting shows its
+next occurrence, not a stale master date. Supported RRULE subset: FREQ
+(DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; anything else
+falls back to the master occurrence. The chat backend reports accounts stored under
+`chat.prpls.*` — creating a chat account needs credentials, so that stays a one-time
+step in Thunderbird's own Chat tab, which has no command-line flag (unlike `-mail`,
+`-calendar`, `-addressbook`, `-compose`).
 
 ## Testing
 

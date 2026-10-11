@@ -2,6 +2,24 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.6.0] — 2026-10-11
+
+### Fixed
+- **Recurring calendar events were shown as their master occurrence only**, so a
+  weekly meeting whose master is months old looked like a stale past event (and was
+  filtered out entirely). The calendar backend now reads the RRULE from
+  `cal_recurrence.icalString` and expands occurrences. Supported subset: FREQ
+  (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; a rule
+  using anything else falls back to the master rather than disappearing. Also fixed:
+  monthly occurrences were generated at midnight, dropping the event's time of day
+  (which had excluded the master itself from its own series).
+
+### Testing
+- The recurrence expander is covered by 20+ unit cases (each FREQ, INTERVAL, BYDAY,
+  BYMONTHDAY incl. months without that day, COUNT, UNTIL, unsupported freq, time-of-day
+  preservation) plus a CLI-level case that seeds `cal_recurrence` and asserts expansion
+  end to end. Still the `bin/omarchy-thunderbird-calendar` mutation target.
+
 ## [1.5.0] — 2026-10-11
 
 ### Added
