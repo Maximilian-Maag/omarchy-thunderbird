@@ -2,6 +2,19 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.10] — 2026-10-11
+
+### Fixed
+- **`omarchy-thunderbird-xpi` could ship an xpi with no bundled config.** The build
+  silently skipped a missing `config/rules.json` or `config/tags.json`
+  (`if source.is_file()`), producing an extension that loads — and then sorts nothing.
+  The build now fails loudly instead. Its docstring also claimed
+  `xpinstall.signatures.required=false` comes from policies.json; it is set in the
+  profile's user.js, because `xpinstall.*` is outside the enterprise-policy allowlist.
+
+### Testing
+- A missing bundled config now has a test that asserts the build raises.
+
 ## [1.9.9] — 2026-10-11
 
 ### Fixed
