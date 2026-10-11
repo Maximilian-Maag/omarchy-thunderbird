@@ -32,9 +32,19 @@ fi
 
 # ── 3. Apply declarative prefs + tags (config/settings.json, config/tags.json) ─
 if [[ -n "$PROFILE" ]]; then
-  "$PLUGIN_DIR/bin/omarchy-thunderbird-apply" --profile "$PROFILE"
-  echo "  Applied user.js preferences, tags and chat accounts (chat is skipped, with a"
-  echo "  warning, if Thunderbird is open — close it and re-run to register them)."
+  apply_log="$("$PLUGIN_DIR/bin/omarchy-thunderbird-apply" --profile "$PROFILE" 2>&1)"
+  printf '%s\n' "$apply_log"
+  if printf '%s' "$apply_log" | grep -q "chat accounts NOT applied"; then
+    # apply skips the chat accounts while Thunderbird is open: it rewrites prefs.js on
+    # exit, so an account registered now would be discarded. Say exactly what to do.
+    echo ""
+    echo "  NOTE: user.js and tags were applied, but the chat accounts in config/chat.json"
+    echo "  were NOT — Thunderbird is running. Close it, then run:"
+    echo "      $PLUGIN_DIR/bin/omarchy-thunderbird-apply --profile \"$PROFILE\""
+    echo ""
+  else
+    echo "  Applied user.js preferences, tags and chat accounts."
+  fi
 fi
 
 # ── 4. Set up userChrome.css theming ──────────────────────────────────────────

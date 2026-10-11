@@ -100,6 +100,28 @@ test('text/href mismatch is caught', () => {
   assert.strictEqual(r.verdict, 'warn');
 });
 
+test('textHostOf reads the host out of link text with a path or port', () => {
+  assert.strictEqual(engine.textHostOf('example.com/path'), 'example.com');
+  assert.strictEqual(engine.textHostOf('example.com:443'), 'example.com');
+  assert.strictEqual(engine.textHostOf('https://www.example.com/a/b'), 'www.example.com');
+  assert.strictEqual(engine.textHostOf('www.example.com'), 'www.example.com');
+  assert.strictEqual(engine.textHostOf('click here'), '');
+});
+
+test('a link whose text is its own URL with a path is not a mismatch', () => {
+  // The whole-text registrable() used to yield "com/path" != "example.com" -> false warn.
+  for (const text of ['example.com/path', 'example.com:443', 'https://example.com/path']) {
+    const r = engine.analyzeLink({ href: 'https://example.com/path', text });
+    assert.strictEqual(r.reasons.some(x => x.code === 'text-href-mismatch'), false, text);
+    assert.strictEqual(r.verdict, 'ok', text);
+  }
+});
+
+test('the mismatch is still caught when the text carries a path', () => {
+  const r = engine.analyzeLink({ href: 'https://evil.example/login', text: 'example.com/login' });
+  assert.ok(r.reasons.some(x => x.code === 'text-href-mismatch'));
+});
+
 test('userinfo trick and odd port', () => {
   const r = engine.analyzeLink({ href: 'https://example.com@evil.top/' });
   assert.ok(r.reasons.some(x => x.code === 'userinfo-trick'));

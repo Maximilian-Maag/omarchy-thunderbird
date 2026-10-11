@@ -2,6 +2,19 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.6] — 2026-10-11
+
+### Fixed
+- **False "warn" on links whose visible text is their own URL with a path or port.** The
+  text/href mismatch check ran `registrable()` over the whole link text, so
+  `example.com/path` reduced to the nonsense host `com/path` and was reported as a
+  mismatch against its own `example.com` href — a benign `example.com/login` link warned.
+  The host is now read out of the text first (`textHostOf`); a genuine mismatch whose text
+  carries a path (`evil.example/login` shown as `example.com/login`) still fires.
+- Bumped the guard extension to 1.1.1 so Thunderbird picks up the changed bundle.
+- install.sh now prints the exact remediation (close Thunderbird, then re-run apply) only
+  when the chat accounts were actually skipped, instead of an unconditional footnote.
+
 ## [1.9.5] — 2026-10-11
 
 ### Fixed

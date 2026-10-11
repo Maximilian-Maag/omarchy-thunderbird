@@ -84,6 +84,17 @@
     return "ok";
   }
 
+  // The host that a piece of link text claims to show. A URL resolves directly; a bare
+  // "example.com/path" or "example.com:443" yields the leading host-shaped token — not
+  // the whole string, which would make registrable() return nonsense like "com/path".
+  function textHostOf(text) {
+    var value = String(text || "").trim();
+    var host = hostOf(value);
+    if (host) return host;
+    var match = /^([^\s/]+\.[a-z0-9-]{2,})/i.exec(value);
+    return match ? match[1].toLowerCase().replace(/[.,;:]+$/, "") : "";
+  }
+
   function analyzeLink(link, rules) {
     rules = rules || RULES;
     var href = String((link && link.href) || "");
@@ -118,7 +129,7 @@
       if (STANDARD_PORTS.indexOf(port) === -1) add(10, "odd-port", port);
 
       // The classic: the visible text is one site, the link goes to another.
-      var textHost = hostOf(text) || (/^[^\s/]+\.[a-z]{2,}/i.test(text) ? registrable(text.toLowerCase()) : "");
+      var textHost = textHostOf(text);
       if (textHost && host && registrable(textHost) !== registrable(host)) {
         add(30, "text-href-mismatch", text.slice(0, 40) + " -> " + host);
       }
@@ -206,6 +217,7 @@
 
   return {
     hostOf: hostOf, schemeOf: schemeOf, registrable: registrable, domainOf: domainOf,
+    textHostOf: textHostOf,
     isIpLiteral: isIpLiteral, editDistance: editDistance, tldOf: tldOf,
     verdict: verdict, analyzeLink: analyzeLink, analyzeSender: analyzeSender,
     analyze: analyze, RULES: RULES,

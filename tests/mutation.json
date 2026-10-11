@@ -127,7 +127,7 @@
           "reason": "`parts.length <= 2` in registrable(): changing <= to < only alters the 2-label case, where both branches (join of two parts vs slice(-2) of two parts) produce the same string. Not observable."
         },
         {
-          "line": 113,
+          "line": 124,
           "kind": "lt->le",
           "reason": "`href.indexOf(\"@\") < href.indexOf(host)` in the userinfo check: @ can never occur at the host's start index (a hostname contains no @), so < and <= never differ. Not observable."
         }
