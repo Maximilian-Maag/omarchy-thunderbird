@@ -21,8 +21,11 @@ user_pref("mail.compose.default_to_paragraph", true);
 user_pref("mail.forward_message_mode", 1); // forward as attachment
 
 // ── Privacy ───────────────────────────────────────────────────────────────────
-// Block remote content in messages by default
-user_pref("mail.remote_content.blocked_by_default", true);
+// Remote content is already blocked by default: Thunderbird ships
+// mailnews.message_display.disable_remote_image = true. Nothing to set here — a pref
+// equal to the built-in default is dropped from prefs.js as a no-op — so the shipped
+// policies.json pins that real pref instead. (mail.remote_content.blocked_by_default,
+// which used to sit here, is not a Thunderbird pref and did nothing.)
 // Don't load images in mail by default
 user_pref("permissions.default.image", 2);
 // Disable telemetry
@@ -72,6 +75,3 @@ user_pref("mailnews.start_page.enabled", false);
 // reasons" and ignores them), so they must live in user.js.
 user_pref("xpinstall.signatures.required", false);
 user_pref("extensions.autoDisableScopes", 0);
-
-// ── Calendar/Tasks ────────────────────────────────────────────────────────────
-user_pref("calendar.view.useSystemColors", false);

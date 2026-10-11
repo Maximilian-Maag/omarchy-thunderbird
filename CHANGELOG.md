@@ -2,6 +2,25 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.9] — 2026-10-11
+
+### Fixed
+- **user.js set prefs Thunderbird does not have, so they did nothing.**
+  `mail.remote_content.blocked_by_default` — the "block remote content in messages" privacy
+  default — is not a Thunderbird pref; the real one is
+  `mailnews.message_display.disable_remote_image`, which already ships `true`, so there is
+  nothing to set (the shipped policies.json pins it). `calendar.view.useSystemColors` is not
+  declared or referenced anywhere in Thunderbird's calendar. Remote-content blocking itself
+  was never in doubt — Thunderbird's own default does it — but the config claiming to
+  implement it was inert, as in 1.9.8.
+
+### Testing
+- test_unit_userjs now checks that *every* pref user.js sets is one Thunderbird knows
+  (scraped from omni.ja), with a documented exemption for the two that are real but
+  unresolvable from that tree (one read via a pref branch, one shipped outside the
+  messenger/toolkit trees). The scraper also learned that pref names may contain a hyphen —
+  `layout.css.prefers-color-scheme.content-override` was invisible to it.
+
 ## [1.9.8] — 2026-10-11
 
 ### Fixed

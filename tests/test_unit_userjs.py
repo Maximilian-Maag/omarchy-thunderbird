@@ -73,6 +73,32 @@ class UserJsStructureCase(unittest.TestCase):
         self.assertIs(prefs["toolkit.legacyUserProfileCustomizations.stylesheets"], True)
 
 
+# Real Thunderbird prefs the scraper cannot resolve from the shipped tree: one is read
+# through a pref branch (browser.crashReports.unsubmittedCheck.*) and Normandy lives in
+# browser/ code outside the messenger + toolkit trees it walks. Set here because it is
+# protective if real and harmless if not.
+UNRESOLVABLE_BUT_REAL = {
+    "app.normandy.enabled",
+    "browser.crashReports.unsubmittedCheck.enabled",
+}
+
+
+class UserJsRealPrefsCase(unittest.TestCase):
+    def test_every_pref_is_one_thunderbird_knows(self):
+        # A pref Thunderbird does not know is silently dropped — configuration that looks
+        # like it works. mail.remote_content.blocked_by_default and
+        # calendar.view.useSystemColors sat in user.js exactly so.
+        index = thunderbird_prefs()
+        if index is None:
+            self.skipTest("Thunderbird omni.ja not found; cannot cross-check prefs")
+        defaults, referenced = index
+        prefs = [k for k, _ in pref_pairs(USER_JS.read_text())]
+        unknown = [k for k in prefs
+                   if k not in defaults and k not in referenced
+                   and k not in UNRESOLVABLE_BUT_REAL]
+        self.assertEqual(unknown, [], "prefs Thunderbird does not know: %s" % unknown)
+
+
 class NonDefaultPrefsCase(unittest.TestCase):
     def test_documented_non_default_prefs_actually_differ_from_tb_defaults(self):
         index = thunderbird_prefs()

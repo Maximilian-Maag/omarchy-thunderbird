@@ -23,9 +23,9 @@ POLICY_SCHEMA_MEMBER = "modules/policies/policies-schema.json"
 
 # A pref declared with a built-in default: pref("name", value);
 DEFAULT_PAIR = re.compile(r'pref\(\s*"([^"]+)"\s*,\s*([^;\n]*?)\s*\)')
-# Any pref-shaped quoted string, so a pref read without a declared default still
-# counts as real.
-PREF_LIKE = re.compile(r'"([a-z][A-Za-z0-9_]{2,}(?:\.[A-Za-z0-9_]+)+)"')
+# Any pref-shaped quoted string, so a pref read without a declared default still counts
+# as real. Segments may contain a hyphen (layout.css.prefers-color-scheme.content-override).
+PREF_LIKE = re.compile(r'"([a-z][A-Za-z0-9_-]{2,}(?:\.[A-Za-z0-9_-]+)+)"')
 
 
 def literal(raw):

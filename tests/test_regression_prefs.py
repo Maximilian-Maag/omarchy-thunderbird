@@ -21,7 +21,6 @@ GOLDEN = {
     "mail.tabs.autoHide": False,
     "mail.tabs.drawInTitlebar": True,
     "mail.forward_message_mode": 1,
-    "mail.remote_content.blocked_by_default": True,
     "permissions.default.image": 2,
     "datareporting.healthreport.uploadEnabled": False,
     "datareporting.policy.dataSubmissionEnabled": False,
@@ -36,7 +35,6 @@ GOLDEN = {
     "mail.openpgp.remind_encryption_possible": False,
     "mail.openpgp.allow_external_gnupg": True,
     "mailnews.start_page.enabled": False,
-    "calendar.view.useSystemColors": False,
 }
 
 

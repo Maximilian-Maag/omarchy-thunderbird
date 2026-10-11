@@ -45,9 +45,10 @@ test('the composition defaults are applied', () => {
   assert.strictEqual(prefs['mail.compose.default_to_paragraph'], true);
 });
 
-test('privacy defaults block remote content and telemetry', () => {
+test('privacy defaults block remote images and telemetry', () => {
   const prefs = loadPrefs();
-  assert.strictEqual(prefs['mail.remote_content.blocked_by_default'], true);
+  // Remote *content* is already blocked by Thunderbird's own default
+  // (mailnews.message_display.disable_remote_image ships true), so it is not set here.
   assert.strictEqual(prefs['permissions.default.image'], 2);
   assert.strictEqual(prefs['datareporting.healthreport.uploadEnabled'], false);
   assert.strictEqual(prefs['toolkit.telemetry.enabled'], false);
