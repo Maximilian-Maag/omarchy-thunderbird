@@ -145,3 +145,53 @@ test('chooseFolder tolerates the account id field name', () => {
   assert.deepStrictEqual(engine.chooseFolder([{ id: 'raw', folders: [{ name: 'X', path: '/X' }] }], 'X'),
     { accountId: 'raw', path: '/X' });
 });
+
+// ── messageContext: To/Cc from the header, List-Id and attachments from the MIME tree ──
+const HEADER = { author: 'Shop <a@mail.shop.example>', subject: 'Your order',
+                 recipients: ['me@example.com'], ccList: ['other@example.com'] };
+
+test('messageContext takes From/name/subject/To from the message header', () => {
+  const ctx = engine.messageContext(HEADER, null);
+  assert.strictEqual(ctx.from, 'Shop <a@mail.shop.example>');
+  assert.strictEqual(ctx.name, 'Shop');
+  assert.strictEqual(ctx.subject, 'Your order');
+  assert.strictEqual(ctx.to, 'me@example.com, other@example.com');
+});
+
+test('messageContext reads List-Id from the MIME tree headers', () => {
+  const full = { headers: { 'list-id': ['<announce.list.example>'] } };
+  assert.strictEqual(engine.messageContext(HEADER, full).listId, '<announce.list.example>');
+  // no MIME tree (getFull failed) -> no List-Id, and it must not throw
+  assert.strictEqual(engine.messageContext(HEADER, null).listId, '');
+});
+
+test('messageContext tolerates a message with missing fields', () => {
+  const ctx = engine.messageContext({}, null);
+  assert.deepStrictEqual(ctx, { from: '', name: '', subject: '', to: '',
+                                listId: '', hasAttachment: false });
+});
+
+test('hasAttachmentPart detects Content-Disposition: attachment', () => {
+  const full = { parts: [{ headers: { 'content-disposition': ['attachment; filename="a.pdf"'] } }] };
+  assert.strictEqual(engine.hasAttachmentPart(full), true);
+  assert.strictEqual(engine.messageContext(HEADER, full).hasAttachment, true);
+});
+
+test('hasAttachmentPart treats a named non-inline part as an attachment', () => {
+  assert.strictEqual(engine.hasAttachmentPart({ name: 'report.pdf' }), true);
+  // an inline image is not an attachment
+  assert.strictEqual(engine.hasAttachmentPart(
+    { name: 'logo.png', headers: { 'content-disposition': ['inline'] } }), false);
+});
+
+test('hasAttachmentPart recurses into sub-parts and handles no tree', () => {
+  const nested = { parts: [{ parts: [{ name: 'deep.pdf' }] }] };
+  assert.strictEqual(engine.hasAttachmentPart(nested), true);
+  assert.strictEqual(engine.hasAttachmentPart(null), false);
+  assert.strictEqual(engine.hasAttachmentPart({ contentType: 'text/plain' }), false);
+});
+
+test('a list_id rule now fires from a real MIME tree', () => {
+  const full = { headers: { 'list-id': ['<x.list.example>'] } };
+  assert.strictEqual(engine.ruleMatches(RULES[1], engine.messageContext(HEADER, full)), true);
+});

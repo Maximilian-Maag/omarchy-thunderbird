@@ -2,6 +2,23 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.5] — 2026-10-11
+
+### Fixed
+- **Two shipped auto-sort rules could never match.** The Invoices rule
+  (`has_attachment: true`) and the Mailing-lists rule (`list_id: true`) were dead: the
+  extension built the matcher context with `hasAttachment: false` and `listId: ""`
+  hardcoded, because neither lives on the message header. The context is now built by
+  `SortEngine.messageContext`, which takes To/Cc from the header and reads List-Id and the
+  attachment flag from the MIME tree (`browser.messages.getFull`), so `list_id`,
+  `has_attachment` and `to_contains` rules fire as documented.
+
+### Testing
+- The context-building logic (`messageContext`, `hasAttachmentPart`) lives in the pure
+  sort engine — a mutation target — rather than the unmutatable background, and is covered
+  by the js suite (attachment via Content-Disposition or a named non-inline part, List-Id
+  from the MIME headers, missing fields).
+
 ## [1.9.4] — 2026-10-11
 
 ### Fixed

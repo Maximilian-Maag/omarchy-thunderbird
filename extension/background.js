@@ -126,18 +126,16 @@ async function applySort(message) {
   const [rulesDoc, tagsDoc] = await Promise.all([loadConfig("rules.json"), loadConfig("tags.json")]);
   if (!rulesDoc || !tagsDoc) return;
   try {
-    const sender = {
-      from: message.author || "",
-      name: (message.author || "").replace(/\s*<[^>]*>\s*$/, ""),
-    };
-    const result = SortEngine.resolveActions({
-      from: sender.from,
-      name: sender.name,
-      subject: message.subject || "",
-      to: "",
-      listId: "",
-      hasAttachment: false,
-    }, rulesDoc.rules);
+    // List-Id and the attachment flag are not on the message header — they need the MIME
+    // tree. Decoding the body is unnecessary, so only headers are decoded (the default).
+    let full = null;
+    try {
+      full = await browser.messages.getFull(message.id, { decodeContent: false });
+    } catch (e) {
+      console.warn("sort: could not read the message for List-Id/attachments", e);
+    }
+    const result = SortEngine.resolveActions(
+      SortEngine.messageContext(message, full), rulesDoc.rules);
     if (!result.acted) return;
 
     const updates = {};

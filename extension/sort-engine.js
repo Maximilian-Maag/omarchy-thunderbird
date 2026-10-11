@@ -121,6 +121,38 @@
     return partial ? { accountId: partial.accountId, path: partial.path } : null;
   }
 
+  function headerValue(headers, name) {
+    var list = headers && headers[name] ? headers[name] : [];
+    var first = list[0];
+    return first ? String(first) : "";
+  }
+
+  // A MIME part is an attachment when its Content-Disposition says so, or when it is a
+  // named part that is not explicitly inline (a forwarded message, a PDF, an image…).
+  function hasAttachmentPart(part) {
+    if (!part) return false;
+    var disposition = headerValue(part.headers, "content-disposition").toLowerCase();
+    if (disposition.indexOf("attachment") === 0) return true;
+    if (part.name && disposition.indexOf("inline") !== 0) return true;
+    return (part.parts || []).some(hasAttachmentPart);
+  }
+
+  // The matcher context for a message. To/Cc come straight from the message header;
+  // List-Id and the attachment flag live in the MIME tree, so pass the getFull() result
+  // as the second argument. Without it, those two conditions simply see nothing.
+  function messageContext(message, full) {
+    var author = String((message && message.author) || "");
+    var to = ((message && message.recipients) || []).concat((message && message.ccList) || []);
+    return {
+      from: author,
+      name: author.replace(/\s*<[^>]*>\s*$/, ""),
+      subject: String((message && message.subject) || ""),
+      to: to.join(", "),
+      listId: headerValue(full && full.headers, "list-id"),
+      hasAttachment: hasAttachmentPart(full),
+    };
+  }
+
   return {
     domainOf: domainOf,
     domainMatches: domainMatches,
@@ -128,5 +160,8 @@
     resolveActions: resolveActions,
     flattenFolders: flattenFolders,
     chooseFolder: chooseFolder,
+    headerValue: headerValue,
+    hasAttachmentPart: hasAttachmentPart,
+    messageContext: messageContext,
   };
 });
