@@ -72,7 +72,7 @@
         },
         {
           "line": 19,
-          "kind": "number\u00b11",
+          "kind": "number±1",
           "reason": "the mutated digit is the file descriptor in '>&2'; '>&3' only redirects the error message to an unopened fd. Control flow and exit status are unchanged, and no test asserts on the diagnostic stream."
         }
       ]
