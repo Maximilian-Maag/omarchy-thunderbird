@@ -178,6 +178,32 @@
         "unittest",
         "tests.test_unit_chat"
       ]
+    },
+    {
+      "path": "bin/omarchy-thunderbird-watch",
+      "lang": "python",
+      "tests": [
+        "python3",
+        "-m",
+        "unittest",
+        "tests.test_unit_watch"
+      ]
+    },
+    {
+      "path": "extension/guard-banner-model.js",
+      "lang": "javascript",
+      "tests": [
+        "node",
+        "--test",
+        "tests/js/guard-banner-model.test.js"
+      ],
+      "equivalent": [
+        {
+          "line": 6,
+          "kind": "and->or",
+          "reason": "the UMD wrapper's `typeof module === \"object\" && module.exports` guard: both operands are true in every environment this file runs in (node's CommonJS loader and the injected message-display scope), so && and || select the same branch. Not observable."
+        }
+      ]
     }
   ],
   "exempt": [
@@ -188,6 +214,10 @@
     {
       "path": "extension/guard-rules.js",
       "reason": "pure data (the shortener/TLD/brand lists and thresholds); it has no branching to mutate, and its shape is asserted by the engine tests"
+    },
+    {
+      "path": "extension/guard-banner.js",
+      "reason": "injected into the message display document at runtime (document/browser globals only); it cannot be executed outside a real Thunderbird, so its wording logic is factored into guard-banner-model.js (a mutation target) and the DOM wiring is pinned by static checks in tests/test_unit_extension.py"
     },
     {
       "path": "bin/set-system-default",

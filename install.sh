@@ -60,8 +60,8 @@ if [[ -n "$PROFILE" ]]; then
 UCJS
 fi
 
-# ── 4b. Install the widget backends on PATH (unread + calendar) ───────────────
-for backend in omarchy-thunderbird-unread omarchy-thunderbird-calendar; do
+# ── 4b. Install the widget backends on PATH (unread + calendar + watcher) ─────
+for backend in omarchy-thunderbird-unread omarchy-thunderbird-calendar omarchy-thunderbird-watch; do
   BIN_SRC="$PLUGIN_DIR/bin/$backend"
   BIN_DEST="/usr/local/bin/$backend"
   if [[ -L "$BIN_DEST" ]] && [[ "$(readlink -f "$BIN_DEST")" == "$(readlink -f "$BIN_SRC")" ]]; then
@@ -131,6 +131,12 @@ elif grep -q "thunderbird" "${AUTOSTART:-/dev/null}" 2>/dev/null; then
   echo "  Thunderbird already in autostart."
 else
   echo "  No autostart.lua found — add manually: o.launch_on_start(\"thunderbird\")"
+fi
+
+# Push mail changes to the bar widget instead of polling it.
+if [[ -f "$AUTOSTART" ]] && ! grep -q "omarchy-thunderbird-watch" "$AUTOSTART"; then
+  printf '\n-- omarchy-thunderbird: push mail changes to the bar widget\no.launch_on_start("omarchy-thunderbird-watch")\n' >> "$AUTOSTART"
+  echo "  Added the mail watcher to autostart."
 fi
 
 # ── 8. Set as default mail client ─────────────────────────────────────────────

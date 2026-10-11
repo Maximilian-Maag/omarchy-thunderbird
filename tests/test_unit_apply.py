@@ -138,6 +138,76 @@ class ResolveProfileCase(unittest.TestCase):
             self.assertIsNone(apply.resolve_profile(None))
 
 
+class ChatAccountsCase(unittest.TestCase):
+    def write(self, tmp, payload):
+        path = pathlib.Path(tmp) / "chat.json"
+        path.write_text(json.dumps(payload))
+        return path
+
+    def test_a_missing_file_means_no_accounts(self):
+        self.assertEqual(apply.load_chat_accounts(pathlib.Path("/nonexistent/chat.json")), [])
+
+    def test_shipped_chat_json_is_valid(self):
+        accounts = apply.load_chat_accounts(REPO / "config" / "chat.json")
+        self.assertEqual(accounts, [])  # shipped empty: nothing is written until opted in
+
+    def test_a_valid_account_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, {"accounts": [
+                {"key": "libera", "name": "Libera", "protocol": "prpl-irc",
+                 "username": "bob@irc.libera.chat", "autoLogin": True, "autoJoin": "#x"}]})
+            self.assertEqual(len(apply.load_chat_accounts(path)), 1)
+
+    def test_a_bad_key_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, {"accounts": [{"key": "Bad Key", "name": "x", "protocol": "prpl-irc"}]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_a_duplicate_key_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            acct = {"key": "dup", "name": "x", "protocol": "prpl-irc"}
+            path = self.write(tmp, {"accounts": [acct, dict(acct)]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_a_missing_name_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, {"accounts": [{"key": "x", "name": " ", "protocol": "prpl-irc"}]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_a_protocol_that_is_not_prpl_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, {"accounts": [{"key": "x", "name": "x", "protocol": "irc"}]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_a_non_boolean_autoLogin_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, {"accounts": [{"key": "x", "name": "x", "protocol": "prpl-irc", "autoLogin": "yes"}]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_account_prefs_use_the_messenger_account_namespace(self):
+        prefs = apply.account_prefs([
+            {"key": "libera", "name": "Libera", "protocol": "prpl-irc",
+             "username": "bob@irc.libera.chat", "autoLogin": True, "autoJoin": "#a,#b"},
+        ])
+        self.assertEqual(prefs["messenger.account.libera.name"], "Libera")
+        self.assertEqual(prefs["messenger.account.libera.prpl"], "prpl-irc")
+        self.assertIs(prefs["messenger.account.libera.autoLogin"], True)
+        self.assertEqual(prefs["messenger.account.libera.autoJoin"], "#a,#b")
+        # options live one level deeper
+        self.assertEqual(prefs["messenger.account.libera.options.username"], "bob@irc.libera.chat")
+
+    def test_optional_fields_are_omitted_when_absent(self):
+        prefs = apply.account_prefs([{"key": "x", "name": "X", "protocol": "prpl-irc"}])
+        self.assertIs(prefs["messenger.account.x.autoLogin"], False)
+        self.assertNotIn("messenger.account.x.autoJoin", prefs)
+        self.assertNotIn("messenger.account.x.options.username", prefs)
+
+
 class LiteralCase(unittest.TestCase):
     def test_booleans_numbers_and_strings(self):
         self.assertEqual(apply.literal(True), "true")

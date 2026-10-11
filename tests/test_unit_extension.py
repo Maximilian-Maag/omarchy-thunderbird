@@ -86,6 +86,30 @@ class BuildCase(unittest.TestCase):
         self.assertTrue(rules["rules"])
         self.assertTrue(tags["tags"])
 
+    def test_background_moves_through_the_verified_api(self):
+        # messages.move(ids, destination) exists (schemas/messages.json, name "move"),
+        # and the destination is resolved by the engine rather than guessed.
+        source = (EXT / "background.js").read_text()
+        self.assertIn("browser.messages.move([message.id], destination)", source)
+        self.assertIn("SortEngine.chooseFolder(", source)
+        self.assertIn("browser.accounts.list()", source)
+
+    def test_background_registers_the_banner_scripts(self):
+        # messageDisplayScripts.register({js, css}) — namespace confirmed in
+        # chrome/messenger/content/messenger/schemas/extensionScripts.json.
+        source = (EXT / "background.js").read_text()
+        self.assertIn("browser.messageDisplayScripts.register({", source)
+        for name in ("guard-banner-model.js", "guard-banner.js", "guard-banner.css"):
+            self.assertIn(name, source, "banner asset %s is not registered" % name)
+            self.assertTrue((EXT / name).is_file(), "missing banner asset %s" % name)
+
+    def test_xpi_bundles_the_banner_assets(self):
+        xpi.build_xpi(EXT, self.out)
+        with zipfile.ZipFile(self.out) as archive:
+            names = archive.namelist()
+        for name in ("guard-banner-model.js", "guard-banner.js", "guard-banner.css"):
+            self.assertIn(name, names)
+
     def test_manifest_in_the_xpi_parses_and_has_the_id(self):
         xpi.build_xpi(EXT, self.out)
         with zipfile.ZipFile(self.out) as archive:

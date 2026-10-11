@@ -38,16 +38,17 @@ cal = load_module("tb_cal", CAL)
 
 
 def make_db(path, events, recurrences=()):
-    """Build a calendar store. Event rows are (id, cal_id, title, start, end, status)
-    with an optional 7th element, the recurrence_id of a detached exception."""
+    """Build a calendar store. Event rows are (id, cal_id, title, start, end, status),
+    with optional 7th recurrence_id (detached exception), 8th flags and 9th
+    event_start_tz (for all-day / floating rendering)."""
     conn = sqlite3.connect(str(path))
     conn.execute("CREATE TABLE cal_events (id TEXT, cal_id TEXT, title TEXT, "
                  "event_start INTEGER, event_end INTEGER, ical_status TEXT, "
-                 "recurrence_id INTEGER)")
+                 "recurrence_id INTEGER, flags INTEGER, event_start_tz TEXT)")
     conn.execute("CREATE TABLE cal_recurrence (item_id TEXT, cal_id TEXT, icalString TEXT)")
     for row in events:
-        row = tuple(row) + (None,) * (7 - len(row))
-        conn.execute("INSERT INTO cal_events VALUES (?,?,?,?,?,?,?)", row)
+        row = tuple(row) + (None,) * (9 - len(row))
+        conn.execute("INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?)", row)
     conn.executemany("INSERT INTO cal_recurrence VALUES (?,?,?)",
                      [(item, "cal", ical) for item, ical in recurrences])
     conn.commit()
@@ -69,6 +70,19 @@ class UnitCase(unittest.TestCase):
     def test_to_datetime_matches_fromtimestamp(self):
         dt = datetime.datetime(2030, 1, 1, 12, 0)
         self.assertEqual(cal.to_datetime(usecs(dt)), dt.replace(second=0, microsecond=0))
+
+    def test_to_display_converts_a_zoned_time_to_local(self):
+        dt = datetime.datetime(2030, 1, 1, 12, 0)
+        self.assertEqual(cal.to_display(usecs(dt)), dt.replace(second=0, microsecond=0))
+
+    def test_to_display_reads_all_day_and_floating_as_stored(self):
+        # All-day is stored as midnight UTC and floating as wall-clock-as-UTC; both
+        # must come back exactly as stored, with no local offset applied.
+        wall = datetime.datetime(2030, 6, 5, 0, 0)
+        stored = int(wall.replace(tzinfo=datetime.timezone.utc).timestamp()) * 1_000_000
+        self.assertEqual(cal.to_display(stored, allday=True), wall)
+        self.assertEqual(cal.to_display(stored, floating=True), wall)
+        self.assertEqual(cal.to_display(stored), cal.to_datetime(stored))
 
 
 class LoadCase(unittest.TestCase):
@@ -96,6 +110,17 @@ class LoadCase(unittest.TestCase):
             event = cal.load_events(db, pathlib.Path(work))[0]
         self.assertEqual(event["status"], "CONFIRMED")
         self.assertEqual(event["end_usecs"] - event["start_usecs"], 3600 * 1000000)
+
+    def test_load_events_reads_the_allday_flag_and_floating_tz(self):
+        db = self.dir / "local.sqlite"
+        make_db(db, [("a", "cal", "Holiday", 0, 0, "CONFIRMED", None, 8),
+                     ("b", "cal", "Floaty", 0, 0, "CONFIRMED", None, 0, "floating")])
+        with tempfile.TemporaryDirectory() as work:
+            loaded = {e["id"]: e for e in cal.load_events(db, pathlib.Path(work))}
+        self.assertTrue(loaded["a"]["allday"])
+        self.assertFalse(loaded["a"]["floating"])
+        self.assertTrue(loaded["b"]["floating"])
+        self.assertFalse(loaded["b"]["allday"])
 
     def test_a_non_calendar_sqlite_file_yields_no_events(self):
         db = self.dir / "other.sqlite"
@@ -206,6 +231,17 @@ class RecurrenceCase(unittest.TestCase):
 
     def test_parse_until_rejects_garbage(self):
         self.assertIsNone(cal.parse_until("nonsense"))
+
+    def test_until_z_is_converted_from_utc_to_local(self):
+        expected = datetime.datetime.fromtimestamp(
+            datetime.datetime(2030, 6, 30, 21, 0, tzinfo=datetime.timezone.utc).timestamp())
+        self.assertEqual(cal.until_as_local("20300630T210000Z"), expected)
+
+    def test_until_date_is_left_alone(self):
+        self.assertEqual(cal.until_as_local("20300630"), datetime.datetime(2030, 6, 30))
+
+    def test_until_none_stays_none(self):
+        self.assertIsNone(cal.until_as_local("nonsense"))
 
     def test_daily(self):
         occ = self.expand("FREQ=DAILY", horizon_days=3)
@@ -341,6 +377,11 @@ class ExdateCase(unittest.TestCase):
     def test_parse_datetime_list_ignores_unparseable_values(self):
         self.assertEqual(cal.parse_datetime_list("EXDATE:garbage"), [])
 
+    def test_parse_datetime_list_converts_a_utc_value_to_local(self):
+        expected = datetime.datetime.fromtimestamp(
+            datetime.datetime(2030, 6, 3, 9, 0, tzinfo=datetime.timezone.utc).timestamp())
+        self.assertEqual(cal.parse_datetime_list("EXDATE:20300603T090000Z"), [expected])
+
     def test_two_rows_keep_both_the_rule_and_the_exdate(self):
         rows = [("r1", "BEGIN:VEVENT\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT"),
                 ("r1", "EXDATE:20300610T090000Z")]
@@ -466,6 +507,55 @@ class RecurringEventCase(unittest.TestCase):
                  "end_usecs": usecs(start + datetime.timedelta(hours=1)),
                  "status": "CONFIRMED", "calendar": "cal", "id": "x", "rule": None}
         self.assertEqual(len(cal.upcoming([event], days=7)), 1)
+
+
+class TimezoneCase(unittest.TestCase):
+    """All-day dates and floating events must not be shifted by the local offset."""
+
+    def test_an_all_day_event_renders_as_a_date_with_no_shift(self):
+        day = (datetime.datetime.now() + datetime.timedelta(days=5)).date()
+        start = datetime.datetime(day.year, day.month, day.day, tzinfo=datetime.timezone.utc)
+        end = start + datetime.timedelta(days=1)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, [("a1", "cal", "Holiday", int(start.timestamp()) * 1_000_000,
+                          int(end.timestamp()) * 1_000_000, "CONFIRMED", None, 8)])
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        occ = cal.upcoming(loaded, days=7)
+        self.assertEqual(len(occ), 1)
+        self.assertTrue(occ[0]["allday"])
+        self.assertEqual(occ[0]["start"], day.isoformat())
+        self.assertEqual(occ[0]["end"], (day + datetime.timedelta(days=1)).isoformat())
+
+    def test_a_floating_event_keeps_its_wall_clock_time(self):
+        day = (datetime.datetime.now() + datetime.timedelta(days=3)).date()
+        wall = datetime.datetime(day.year, day.month, day.day, 9, 0)
+        stored = wall.replace(tzinfo=datetime.timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, [("f1", "cal", "Floating", int(stored.timestamp()) * 1_000_000,
+                          int((stored + datetime.timedelta(hours=1)).timestamp()) * 1_000_000,
+                          "CONFIRMED", None, 0, "floating")])
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        occ = cal.upcoming(loaded, days=7)
+        self.assertEqual(len(occ), 1)
+        self.assertEqual(occ[0]["start"], wall.isoformat(timespec="minutes"))
+
+    def test_a_zoned_event_still_converts_to_local(self):
+        # A Berlin 09:00 event stored as the true instant must render at 09:00 local.
+        day = (datetime.datetime.now() + datetime.timedelta(days=3)).date()
+        wall = datetime.datetime(day.year, day.month, day.day, 9, 0)
+        instant = wall.timestamp()  # local wall clock -> the real instant
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, [("z1", "cal", "Zoned", int(instant) * 1_000_000,
+                          int(instant + 3600) * 1_000_000, "CONFIRMED", None, 0, "Europe/Berlin")])
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        occ = cal.upcoming(loaded, days=7)
+        self.assertEqual(occ[0]["start"], wall.isoformat(timespec="minutes"))
 
 
 class CliCase(unittest.TestCase):

@@ -48,17 +48,16 @@ async function scanMessage(displayed) {
 
     const result = GuardEngine.analyze({ sender, links: extractLinks(full) });
 
-    await browser.storage.local.set({
-      [LAST_VERDICT_KEY]: {
-        messageId: displayed.id,
-        verdict: result.verdict,
-        reasons: result.sender.reasons.concat(
-          result.links.reduce((acc, l) => acc.concat(l.reasons), [])),
-        at: Date.now(),
-      },
-    });
+    const payload = {
+      messageId: displayed.id,
+      verdict: result.verdict,
+      reasons: result.sender.reasons.concat(
+        result.links.reduce((acc, l) => acc.concat(l.reasons), [])),
+      at: Date.now(),
+    };
+    await browser.storage.local.set({ [LAST_VERDICT_KEY]: payload });
 
-    if (result.verdict === "ok") return;
+    if (result.verdict === "ok") return payload;
 
     // Tag the message so it is visible in the list even without the notification.
     try {
@@ -75,14 +74,38 @@ async function scanMessage(displayed) {
       message: (result.sender.reasons[0] && result.sender.reasons[0].code) ||
                "This message looks risky.",
     });
+
+    return payload;
   } catch (e) {
     console.warn("guard: scan failed", e);
+    return null;
   }
 }
 
+// ── In-message warning banner ────────────────────────────────────────────────
+// The banner runs inside the message document (a separate context), so it asks here
+// for the verdict of the message currently on screen. Verdicts are held per tab.
+const tabVerdicts = new Map();
+
 browser.messageDisplay.onMessageDisplayed.addListener((tab, displayed) => {
-  scanMessage(displayed);
+  scanMessage(displayed).then(payload => {
+    if (tab) tabVerdicts.set(tab.id, payload || null);
+  });
 });
+
+browser.runtime.onMessage.addListener((message, sender) => {
+  if (message && message.type === "omarchy-guard-verdict") {
+    const id = sender && sender.tab ? sender.tab.id : null;
+    return Promise.resolve(tabVerdicts.get(id) || null);
+  }
+  return undefined;
+});
+
+// Inject the banner model (for the wording) and the banner script, plus its styles.
+browser.messageDisplayScripts.register({
+  js: [{ file: "guard-banner-model.js" }, { file: "guard-banner.js" }],
+  css: [{ file: "guard-banner.css" }],
+}).catch(e => console.warn("guard: banner registration failed", e));
 
 // ── Auto-sort ────────────────────────────────────────────────────────────────
 // Declarative rules (config/rules.json) decide folder + tags for arriving mail.
@@ -124,8 +147,21 @@ async function applySort(message) {
     if (Object.keys(updates).length) {
       await browser.messages.update(message.id, updates);
     }
-    // Folder moves are left to the user's Thunderbird filters unless a destination is
-    // configured and resolvable; tagging is the safe, always-available action.
+
+    // Move last: resolve the configured destination against the real folder tree and
+    // only move when it resolves exactly. An unresolvable name tags the message and
+    // leaves it in place rather than guessing a folder.
+    if (result.move_to) {
+      const accounts = await browser.accounts.list();
+      const destination = SortEngine.chooseFolder(
+        accounts.map(a => ({ accountId: a.id, name: a.name, folders: a.folders })),
+        result.move_to);
+      if (destination) {
+        await browser.messages.move([message.id], destination);
+      } else {
+        console.warn("sort: no folder named " + result.move_to + "; tagged only");
+      }
+    }
   } catch (e) {
     console.warn("sort: failed", e);
   }

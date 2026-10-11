@@ -6,6 +6,13 @@ test. This tool turns the files under ``config/`` into the profile's ``user.js``
 
 * ``config/settings.json`` — plain preference overrides (machine/user specific)
 * ``config/tags.json``     — tag definitions -> ``mailnews.tags.<key>.{tag,color}``
+* ``config/chat.json``     — chat accounts -> ``messenger.account.<key>.*`` (optional)
+
+Chat accounts are rendered into the ``messenger.account.<key>.*`` namespace, which is
+where Thunderbird keeps them (``imAccounts.sys.mjs``: ``getBranch("messenger.account."
++ key + ".")``). Account *options* such as the nickname live one level deeper under
+``options.`` — the account setters prefix every option with it — so a nickname is
+written as ``messenger.account.<key>.options.username``.
 
 The shipped ``profile/user.js`` is the base; config overrides it (later ``user_pref``
 calls win), and any pref lines a user added by hand to their own ``user.js`` are
@@ -27,6 +34,7 @@ import sys
 
 PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
 TAG_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+ACCOUNT_KEY = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 PREF_KEY = re.compile(r'user_pref\(\s*"([^"]+)"')
 
@@ -73,6 +81,59 @@ def tags_to_prefs(tags):
         key = tag["key"]
         prefs["mailnews.tags.%s.tag" % key] = str(tag["name"])
         prefs["mailnews.tags.%s.color" % key] = str(tag["color"])
+    return prefs
+
+
+def load_chat_accounts(path: pathlib.Path):
+    """Validate and return the chat accounts from a chat.json file.
+
+    A missing file is not an error (chat is optional): it means "no accounts to add".
+    """
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text())
+    accounts = data.get("accounts", [])
+    if not isinstance(accounts, list):
+        raise ValueError("%s: 'accounts' must be a list" % path)
+    seen = set()
+    for account in accounts:
+        key = str(account.get("key", ""))
+        if not ACCOUNT_KEY.match(key):
+            raise ValueError("%s: bad account key %r (want [a-z0-9][a-z0-9-]*)" % (path, key))
+        if key in seen:
+            raise ValueError("%s: duplicate account key %r" % (path, key))
+        seen.add(key)
+        if not str(account.get("name", "")).strip():
+            raise ValueError("%s: account %r has no name" % (path, key))
+        protocol = str(account.get("protocol", ""))
+        if not protocol.startswith("prpl-"):
+            raise ValueError("%s: account %r protocol %r must start with 'prpl-'"
+                             % (path, key, protocol))
+        if "autoLogin" in account and not isinstance(account["autoLogin"], bool):
+            raise ValueError("%s: account %r autoLogin must be a boolean" % (path, key))
+        for optional in ("username", "autoJoin"):
+            if optional in account and not isinstance(account[optional], str):
+                raise ValueError("%s: account %r %s must be a string" % (path, key, optional))
+    return accounts
+
+
+def account_prefs(accounts):
+    """{pref: value} for validated chat accounts.
+
+    Only the fields needed to make an account work are written; protocol defaults fill
+    the rest, so nothing unverified is set. IRC needs no password (``passwordOptional``),
+    which is why a credential-free account can be declared here at all.
+    """
+    prefs = {}
+    for account in accounts:
+        base = "messenger.account.%s." % account["key"]
+        prefs[base + "name"] = str(account["name"])
+        prefs[base + "prpl"] = str(account["protocol"])
+        prefs[base + "autoLogin"] = bool(account.get("autoLogin", False))
+        if account.get("autoJoin"):
+            prefs[base + "autoJoin"] = str(account["autoJoin"])
+        if account.get("username"):
+            prefs[base + "options.username"] = str(account["username"])
     return prefs
 
 
@@ -165,6 +226,7 @@ def main(argv=None) -> int:
     try:
         tags = load_tags(config_dir / "tags.json")
         settings = load_settings(config_dir / "settings.json")
+        accounts = load_chat_accounts(config_dir / "chat.json")
     except (OSError, ValueError) as exc:
         print("omarchy-thunderbird-apply: %s" % exc, file=sys.stderr)
         return 1
@@ -172,6 +234,7 @@ def main(argv=None) -> int:
     config_prefs = {}
     config_prefs.update(tags_to_prefs(tags))
     config_prefs.update(settings)
+    config_prefs.update(account_prefs(accounts))
 
     profile = resolve_profile(args.profile)
     if profile is None or not profile.is_dir():
@@ -189,8 +252,8 @@ def main(argv=None) -> int:
         sys.stdout.write(rendered)
     else:
         write_atomic(target, rendered)
-        print("omarchy-thunderbird: applied %d tag(s) and %d setting(s) to %s"
-              % (len(tags), len(settings), target))
+        print("omarchy-thunderbird: applied %d tag(s), %d setting(s) and %d chat account(s) to %s"
+              % (len(tags), len(settings), len(accounts), target))
     return 0
 
 

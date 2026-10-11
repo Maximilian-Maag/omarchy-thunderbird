@@ -25,8 +25,10 @@ holds a lock on the live file while running.
 Supported RRULE subset: FREQ (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL,
 BYDAY and BYMONTHDAY. Cancelled occurrence days (EXDATE) are excluded and extra ones
 (RDATE) included; a rule using other parts is not expanded (that event falls back to
-its master occurrence). Times are rendered in the machine's local timezone, and UNTIL
-and EXDATE are compared as naive timestamps.
+its master occurrence). Zoned and UTC events render in the machine's local timezone;
+all-day dates and floating events render exactly as stored (no offset shift), all-day
+dates without a time of day. A UTC UNTIL/EXDATE (…Z) is converted to local time before
+comparison so the boundary occurrence is not dropped.
 """
 
 import argparse
@@ -45,6 +47,12 @@ PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
 USECS_PER_SECOND = 1000000
 WEEKDAYS = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
 MAX_OCCURRENCES = 500
+# CAL_ITEM_FLAG.EVENT_ALLDAY (calStorageHelpers.sys.mjs): the event is a date, not a
+# time — its stored start is midnight *UTC*, so it must not be shifted to local time.
+EVENT_ALLDAY = 8
+# The event_*_tz value Thunderbird writes for a floating (zoneless) event: the stored
+# time is the wall clock "as if UTC", so it is read back as stored.
+FLOATING = "floating"
 
 
 def usecs_to_epoch(usecs):
@@ -54,6 +62,21 @@ def usecs_to_epoch(usecs):
 
 def to_datetime(usecs):
     return datetime.datetime.fromtimestamp(usecs_to_epoch(usecs))
+
+
+def to_display(usecs, allday=False, floating=False):
+    """The wall-clock datetime the user should see for a stored timestamp.
+
+    Thunderbird stores the true UTC instant for zoned and UTC events — those convert
+    to local time. But an all-day date is stored as midnight UTC and a floating event
+    as its wall clock "as if UTC", so both are read back exactly as stored, with no
+    timezone shift (a German machine would otherwise show a date-only event at 01:00
+    or 02:00, and a floating event two hours late).
+    """
+    epoch = usecs_to_epoch(usecs)
+    if allday or floating:
+        return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).replace(tzinfo=None)
+    return datetime.datetime.fromtimestamp(epoch)
 
 
 def unfold(text):
@@ -88,9 +111,15 @@ def parse_datetime_list(line):
         return []
     found = []
     for part in line.split(":", 1)[1].split(","):
-        parsed = parse_until(part.strip())
-        if parsed is not None:
-            found.append(parsed)
+        value = part.strip()
+        parsed = parse_until(value)
+        if parsed is None:
+            continue
+        # A UTC value (…Z) names an instant: bring it into the local frame the
+        # occurrences are expanded in. A bare date / floating value stays as-is.
+        if value.upper().endswith("Z"):
+            parsed = _utc_to_local(parsed)
+        found.append(parsed)
     return found
 
 
@@ -128,6 +157,26 @@ def parse_until(value):
         except ValueError:
             continue
     return None
+
+
+def _utc_to_local(moment):
+    """A naive UTC datetime -> the same instant as a naive local datetime."""
+    return datetime.datetime.fromtimestamp(
+        moment.replace(tzinfo=datetime.timezone.utc).timestamp())
+
+
+def until_as_local(value):
+    """RRULE UNTIL in the frame the occurrences are expanded in.
+
+    A UTC UNTIL (…Z) names an instant, so it is converted to local time before the
+    comparison; a bare date (an all-day series) is compared as-is. Skipping this
+    conversion drops the last occurrence of a series whose local time is ahead of
+    the UTC UNTIL (e.g. a 22:00 Berlin event with UNTIL=…T210000Z).
+    """
+    moment = parse_until(value)
+    if moment is not None and value.strip().upper().endswith("Z"):
+        return _utc_to_local(moment)
+    return moment
 
 
 def _weekly_occurrences(start, interval, byday, horizon, limit):
@@ -237,7 +286,7 @@ def expand_occurrences(start, rule, horizon, limit=MAX_OCCURRENCES):
             found = found[:max(0, int(count))]
         except (TypeError, ValueError):
             pass
-    until = parse_until(rule["UNTIL"]) if "UNTIL" in rule else None
+    until = until_as_local(rule["UNTIL"]) if "UNTIL" in rule else None
     if until is not None:
         found = [o for o in found if o <= until]
     return found
@@ -261,8 +310,8 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
         conn = sqlite3.connect(str(staged))
         try:
             rows = conn.execute(
-                "SELECT id, cal_id, title, event_start, event_end, ical_status, recurrence_id "
-                "FROM cal_events").fetchall()
+                "SELECT id, cal_id, title, event_start, event_end, ical_status, "
+                "recurrence_id, flags, event_start_tz FROM cal_events").fetchall()
             recs = {}
             try:
                 recs = parse_recurrence_rows(conn.execute(
@@ -276,7 +325,7 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
 
     masters = {}
     exceptions = []
-    for eid, cal_id, title, start, end, status, recurrence_id in rows:
+    for eid, cal_id, title, start, end, status, recurrence_id, flags, start_tz in rows:
         if start is None:
             continue
         event = {
@@ -286,6 +335,8 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
             "start_usecs": int(start),
             "end_usecs": int(end) if end is not None else int(start),
             "status": status or "",
+            "allday": bool((flags or 0) & EVENT_ALLDAY),
+            "floating": start_tz == FLOATING,
         }
         if recurrence_id:
             # A detached exception: it carries the master's id and the *original*
@@ -325,9 +376,15 @@ def scan_profile(profile: pathlib.Path):
 
 
 def _occurrences_of(event, horizon, limit=MAX_OCCURRENCES):
-    """Concrete (start, end) datetimes for an event, expanding recurrence if any."""
-    master_start = to_datetime(event["start_usecs"])
-    duration = to_datetime(event["end_usecs"]) - master_start
+    """Concrete (start, end) datetimes for an event, expanding recurrence if any.
+
+    Times are placed in the frame the user should see: zoned and UTC events in local
+    time, all-day dates and floating events exactly as stored.
+    """
+    allday = event.get("allday", False)
+    floating = event.get("floating", False)
+    master_start = to_display(event["start_usecs"], allday, floating)
+    duration = to_display(event["end_usecs"], allday, floating) - master_start
     if event.get("override_of"):
         # A detached exception is a single event at its own (new) time: expanding it
         # would resurrect the whole series.
@@ -356,14 +413,21 @@ def upcoming(events, now=None, days=7):
     now = now or datetime.datetime.now()
     horizon = now + datetime.timedelta(days=days)
     keep = []
+    now_epoch = now.timestamp()
+    horizon_epoch = horizon.timestamp()
     for event in events:
         if event["status"].upper() == "CANCELLED":
             continue
         for start, end in _occurrences_of(event, horizon):
-            if end >= now and start <= horizon:
+            # Compare as instants so events in different frames (local, floating,
+            # all-day) are filtered and ordered consistently.
+            if end.timestamp() >= now_epoch and start.timestamp() <= horizon_epoch:
                 entry = dict(event)
-                entry["start"] = start.isoformat(timespec="minutes")
-                entry["end"] = end.isoformat(timespec="minutes")
+                allday = event.get("allday", False)
+                entry["start"] = (start.date().isoformat() if allday
+                                  else start.isoformat(timespec="minutes"))
+                entry["end"] = (end.date().isoformat() if allday
+                                else end.isoformat(timespec="minutes"))
                 entry["start_usecs"] = int(start.timestamp()) * USECS_PER_SECOND
                 keep.append(entry)
     keep.sort(key=lambda e: e["start_usecs"])
@@ -398,7 +462,8 @@ def main(argv=None) -> int:
         print(len(events))
     elif args.json:
         print(json.dumps({"count": len(events), "events": [
-            {"title": e["title"], "start": e["start"], "end": e["end"], "calendar": e["calendar"]}
+            {"title": e["title"], "start": e["start"], "end": e["end"],
+             "calendar": e["calendar"], "all_day": e.get("allday", False)}
             for e in events]}, indent=2))
     else:
         if not events:

@@ -81,8 +81,11 @@ BarWidget {
     }
   }
 
+  // Re-read the backends. Mail changes normally arrive as a push from
+  // omarchy-thunderbird-watch (qs ipc call Maximilian-Maag.thunderbird refresh); the
+  // timer is only a safety net in case the watcher is not running.
   Timer {
-    interval: 30000
+    interval: 300000
     running: true
     repeat: true
     triggeredOnStart: true

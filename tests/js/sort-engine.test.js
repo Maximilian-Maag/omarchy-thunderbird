@@ -90,3 +90,58 @@ test('an empty rule matches everything but acts on nothing', () => {
   assert.strictEqual(r.move_to, '');
   assert.deepStrictEqual(r.add_tags, []);
 });
+
+const ACCOUNTS = [
+  { accountId: 'acc-1', name: 'Personal', folders: [
+    { name: 'Inbox', path: '/Inbox' },
+    { name: 'Archive', path: '/Archive', subFolders: [
+      { name: 'Invoices', path: '/Archive/Invoices' },
+    ] },
+  ] },
+  { accountId: 'acc-2', name: 'Work', folders: [
+    { name: 'Orders', path: '/Orders' },
+  ] },
+];
+
+test('flattenFolders walks nested subfolders', () => {
+  const names = engine.flattenFolders(ACCOUNTS[0].folders, []).map(f => f.path);
+  assert.deepStrictEqual(names, ['/Inbox', '/Archive', '/Archive/Invoices']);
+});
+
+test('chooseFolder matches a folder by name', () => {
+  assert.deepStrictEqual(engine.chooseFolder(ACCOUNTS, 'Orders'),
+    { accountId: 'acc-2', path: '/Orders' });
+});
+
+test('chooseFolder is case-insensitive and trims', () => {
+  assert.deepStrictEqual(engine.chooseFolder(ACCOUNTS, '  orders '),
+    { accountId: 'acc-2', path: '/Orders' });
+});
+
+test('chooseFolder finds a nested folder', () => {
+  assert.deepStrictEqual(engine.chooseFolder(ACCOUNTS, 'Invoices'),
+    { accountId: 'acc-1', path: '/Archive/Invoices' });
+});
+
+test('chooseFolder prefers an exact name over a path segment', () => {
+  const accounts = [{ accountId: 'a', folders: [
+    { name: 'Archive', path: '/Invoices/Archive' },   // path-segment match only
+    { name: 'Invoices', path: '/Mail/Invoices' },     // exact name match
+  ] }];
+  assert.deepStrictEqual(engine.chooseFolder(accounts, 'Invoices'),
+    { accountId: 'a', path: '/Mail/Invoices' });
+});
+
+test('chooseFolder returns null for a name that does not exist', () => {
+  assert.strictEqual(engine.chooseFolder(ACCOUNTS, 'Nonexistent'), null);
+});
+
+test('chooseFolder returns null for an empty destination', () => {
+  assert.strictEqual(engine.chooseFolder(ACCOUNTS, '   '), null);
+  assert.strictEqual(engine.chooseFolder(ACCOUNTS, ''), null);
+});
+
+test('chooseFolder tolerates the account id field name', () => {
+  assert.deepStrictEqual(engine.chooseFolder([{ id: 'raw', folders: [{ name: 'X', path: '/X' }] }], 'X'),
+    { accountId: 'raw', path: '/X' });
+});

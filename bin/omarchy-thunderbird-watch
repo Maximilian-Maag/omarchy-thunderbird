@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Push mail changes to the Omarchy bar widget instead of polling it.
+
+The widget (``Maximilian-Maag.thunderbird``) only needs to know *when* mail state
+changes, so it does not have to re-count unread messages every 30 seconds. This watches
+the profile's mail stores and calls the widget's own IPC handler when something moves:
+
+    qs ipc call Maximilian-Maag.thunderbird refresh
+
+which is the same shape the stock Omarchy widgets use (an ``IpcHandler`` with a
+``target`` and a ``refresh()`` that broadcasts).
+
+    omarchy-thunderbird-watch                 # watch until interrupted
+    omarchy-thunderbird-watch --once          # print what it would watch + run (no loop)
+    omarchy-thunderbird-watch --interval 10   # poll fallback interval, seconds
+
+With ``inotifywait`` (inotify-tools) installed it reacts immediately; without it, it
+falls back to comparing the mail stores' modification times on a timer.
+"""
+
+import argparse
+import json
+import pathlib
+import shutil
+import subprocess
+import sys
+import time
+
+PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
+TARGET = "Maximilian-Maag.thunderbird"
+MAIL_DIRS = ("Mail", "ImapMail")
+IGNORE_NAMES = ("parentlock", "lock")
+IGNORE_SUFFIXES = (".tmp", ".lock", ".dat")
+
+
+def mail_dirs(profile):
+    """The local mail stores inside a profile that exist (Mail/, ImapMail/)."""
+    profile = pathlib.Path(profile)
+    return [profile / name for name in MAIL_DIRS if (profile / name).is_dir()]
+
+
+def is_interesting(path, dirs):
+    """True for files whose change means new mail or new read state.
+
+    Lock files and temporary writes are ignored: they change constantly and say nothing
+    about the message list.
+    """
+    candidate = pathlib.Path(path)
+    name = candidate.name
+    if name.startswith(".") or any(token in name for token in IGNORE_NAMES):
+        return False
+    if candidate.suffix in IGNORE_SUFFIXES:
+        return False
+    return any(candidate == d or d in candidate.parents for d in dirs)
+
+
+def refresh_command(target=TARGET):
+    """The IPC call that tells the widget to re-read its backends."""
+    return ["qs", "ipc", "call", target, "refresh"]
+
+
+def fingerprint(dirs):
+    """(file count, newest mtime) over the mail stores — cheap change detector."""
+    count = 0
+    newest = 0.0
+    for root in dirs:
+        for path in root.rglob("*"):
+            if not path.is_file() or not is_interesting(path, dirs):
+                continue
+            count += 1
+            try:
+                newest = max(newest, path.stat().st_mtime)
+            except OSError:
+                continue
+    return (count, newest)
+
+
+def refresh(target=TARGET):
+    """Fire the IPC call; a missing/stopped shell is not this tool's problem."""
+    try:
+        subprocess.run(refresh_command(target), capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def should_fire(now, last, debounce):
+    """True once `debounce` seconds have passed since the last refresh.
+
+    Extracted so the boundary (exactly the debounce interval) is unit-testable without
+    waiting on a real clock.
+    """
+    return now - last >= debounce
+
+
+def watch_inotify(dirs, target, debounce=1.0):
+    """Block, running inotifywait and refreshing the widget on relevant changes."""
+    command = ["inotifywait", "-r", "-m", "-e", "modify,create,moved_to,close_write",
+               "--format", "%w%f", "--"] + [str(d) for d in dirs]
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
+    last = 0.0
+    for line in process.stdout or []:
+        path = line.strip()
+        if not is_interesting(path, dirs):
+            continue
+        now = time.monotonic()
+        if not should_fire(now, last, debounce):
+            continue
+        last = now
+        refresh(target)
+    return process.wait()
+
+
+def watch_poll(dirs, target, interval):
+    """Fallback: refresh only when the stores' fingerprint changes."""
+    previous = fingerprint(dirs)
+    while True:
+        time.sleep(interval)
+        current = fingerprint(dirs)
+        if current != previous:
+            previous = current
+            refresh(target)
+
+
+def resolve_profile(explicit):
+    if explicit:
+        return pathlib.Path(explicit)
+    finder = PLUGIN_DIR / "bin/omarchy-tb-profile"
+    result = subprocess.run([sys.executable, str(finder)], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return pathlib.Path(result.stdout.strip())
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Push mail changes to the bar widget")
+    parser.add_argument("--profile", default=None)
+    parser.add_argument("--target", default=TARGET)
+    parser.add_argument("--interval", type=float, default=10.0)
+    parser.add_argument("--once", dest="once", action="store_true",
+                        help="print the watch list and IPC command, then exit")
+    args = parser.parse_args(argv)
+
+    profile = resolve_profile(args.profile)
+    if profile is None or not profile.is_dir():
+        print("omarchy-thunderbird-watch: no Thunderbird profile found", file=sys.stderr)
+        return 1
+    dirs = mail_dirs(profile)
+    if not dirs:
+        print("omarchy-thunderbird-watch: no Mail/ or ImapMail/ store in %s" % profile,
+              file=sys.stderr)
+        return 1
+
+    if args.once:
+        print(json.dumps({
+            "profile": str(profile),
+            "watch": [str(d) for d in dirs],
+            "command": refresh_command(args.target),
+            "inotifywait": bool(shutil.which("inotifywait")),
+        }, indent=2))
+        return 0
+
+    if shutil.which("inotifywait"):
+        return watch_inotify(dirs, args.target)
+    return watch_poll(dirs, args.target, args.interval)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

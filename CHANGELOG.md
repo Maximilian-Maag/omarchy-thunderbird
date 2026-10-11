@@ -2,6 +2,55 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.0] — 2026-10-11
+
+Closes the four gaps left after 1.8.0.
+
+### Added
+- **In-message warning banner.** The guard already tagged suspect mail and raised a
+  notification, but nothing appeared in the message itself. The extension now registers
+  a script and stylesheet with `messageDisplayScripts.register()`; the injected script
+  asks the background for this message's verdict and renders a warn/danger banner. The
+  wording lives in `guard-banner-model.js` (pure, tested, and a mutation target) and a
+  cross-file test asserts every reason code the engine can emit has banner text — it
+  immediately caught two drifts (`unparseable-url` misspelled, and the engine's separate
+  `suspicious-sender-tld`).
+- **Auto-sort actually files mail.** Previously it only tagged, and any `move_to` was
+  left to Thunderbird's own filters. The engine now resolves the configured destination
+  against the real folder tree (`chooseFolder`, exact name before path segment, `null`
+  when nothing matches) and the background calls the verified `browser.messages.move`.
+  An unresolvable destination still tags only rather than guessing a folder.
+- **Push to the bar widget.** `omarchy-thunderbird-watch` watches the profile's mail
+  stores (inotify, with an mtime-poll fallback) and calls the widget's own IPC handler
+  (`qs ipc call Maximilian-Maag.thunderbird refresh`); the widget's timer drops to a
+  five-minute safety net. Installed on PATH and added to Hyprland autostart.
+- **Chat accounts as config.** `config/chat.json` (rendered by
+  `omarchy-thunderbird-apply`) declares credential-free chat accounts under
+  `messenger.account.<key>.*`. IRC is the usable case — it is `passwordOptional`.
+
+### Fixed
+- **All-day and floating calendar events were shown shifted by the local offset.**
+  Thunderbird stores an all-day date as midnight *UTC* and a floating event as its wall
+  clock "as if UTC", but the calendar backend rendered both with `fromtimestamp` — so a
+  German machine showed a date-only event at 01:00/02:00 and a floating event two hours
+  late. All-day dates now render as a date with no time of day and floating events keep
+  their wall clock. A UTC `UNTIL`/`EXDATE` is likewise converted to local time before
+  comparison, so the boundary occurrence of a series whose local time runs ahead of the
+  UTC boundary is no longer dropped.
+- **The chat backend looked for the wrong namespace.** It scanned
+  `chat.prpls.<protocol>.<account>.<field>`, which is not where Thunderbird stores
+  accounts: they live under `messenger.account.<key>.*`, read via
+  `Services.prefs.getBranch("messenger.account." + key + ".")` in `imAccounts.sys.mjs`,
+  with options one level deeper under `options.`. On a real profile it would have
+  reported "no accounts" even when accounts existed.
+
+### Testing
+- js suites for the banner model and the folder resolver (both mutation targets); unit
+  suites for the watcher and for chat-account validation/rendering. Wall-clock honesty:
+  the banner's DOM injection and the move call cannot be exercised outside a real
+  Thunderbird, so they are pinned by static assertions plus the e2e extension-load test,
+  not by mutation.
+
 ## [1.8.0] — 2026-10-11
 
 ### Fixed

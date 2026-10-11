@@ -9,8 +9,9 @@
 | **22 Omarchy themes** | Full chrome + message-body coverage for every stock theme. Applied by rendering the active theme into `userChrome.css`, so it works with **no userChromeJS loader** |
 | **Instant reload** | `omarchy-thunderbird-reload` applies the current theme and restarts Thunderbird so the change is visible now (Thunderbird reads the stylesheet at startup) |
 | **Unread bar widget** | Unread count in the Omarchy bar (`Maximilian-Maag.thunderbird`); click to open Thunderbird |
-| **Guard extension** | Scores every message for scam/phishing risk; tags suspect mail `suspicious` and warns |
-| **Comms widget** | Unread mail + next calendar event in the bar; backends for calendar and chat |
+| **Guard extension** | Scores every message for scam/phishing risk; tags suspect mail `suspicious`, warns, and shows an in-message banner |
+| **Auto-sort** | Rules tag and file arriving mail; an unmatched destination tags only, never guesses |
+| **Comms widget** | Unread mail + next calendar event in the bar; pushed on change, not polled |
 | **Config as code** | Tags and preferences declared in `config/`, rendered into the profile — reviewable and tested |
 | **Privacy defaults** | Remote content blocked, telemetry off, crash reporter disabled |
 | **Notification defaults** | No message preview on alerts, no Thunderbird chime, unread count in the badge |
@@ -98,13 +99,17 @@ omarchy-thunderbird/
 ├── config/
 │   ├── tags.json           — declarative tag definitions
 │   ├── settings.json       — declarative preference overrides
-│   └── rules.json          — declarative auto-sort rules
+│   ├── rules.json          — declarative auto-sort rules
+│   └── chat.json           — declarative chat accounts (credential-free)
 ├── extension/
 │   ├── manifest.json       — guard WebExtension manifest
 │   ├── guard-engine.js     — pure scam/phishing scoring engine
 │   ├── guard-rules.js      — shortener/TLD/brand lists and thresholds
-│   ├── sort-engine.js      — pure auto-sort rule matcher
-│   └── background.js       — Thunderbird wiring (display → guard; new mail → sort)
+│   ├── guard-banner-model.js — pure warning-banner wording
+│   ├── guard-banner.js     — in-message banner (injected script)
+│   ├── guard-banner.css    — banner styles
+│   ├── sort-engine.js      — pure auto-sort rule matcher and folder resolver
+│   └── background.js       — Thunderbird wiring (guarded display, sorted new mail)
 ├── profile/
 │   └── user.js             — base profile preferences
 ├── hooks/
@@ -118,6 +123,7 @@ omarchy-thunderbird/
 │   ├── omarchy-thunderbird-unread     — unread-message count (bar widget backend)
 │   ├── omarchy-thunderbird-calendar   — upcoming calendar events (bar widget backend)
 │   ├── omarchy-thunderbird-chat       — configured chat accounts
+│   ├── omarchy-thunderbird-watch      — push mail changes to the bar widget
 │   ├── omarchy-thunderbird-rules      — validate the auto-sort rules
 │   ├── policies.json            — managed preferences (allowlisted prefs only)
 │   └── set-system-default       — privileged script: system-wide MIME defaults
@@ -159,7 +165,36 @@ bin/omarchy-thunderbird-rules --validate   # check rules against the tag definit
 
 Validation matters because a rule that tags with a tag that does not exist in
 `config/tags.json` is a silent no-op. The engine (`extension/sort-engine.js`) is pure
-and exhaustively tested; the extension applies it on new mail.
+and exhaustively tested; the extension applies it on new mail. A rule's `move_to` is
+resolved against the real folder tree (`chooseFolder` — exact name before path segment)
+and only then moved; if no folder matches, the message is tagged and left in place
+rather than filed somewhere arbitrary.
+
+## Chat accounts
+
+`config/chat.json` declares chat accounts, rendered into the profile's `user.js` by
+`omarchy-thunderbird-apply` under `messenger.account.<key>.*` (options such as the
+nickname sit one level deeper, under `options.`, since every account option setter adds
+that prefix).
+
+Only credential-free accounts can be declared: a password is not a preference, it goes
+to the system login store, so Matrix/XMPP still have to be added in Thunderbird's own
+Chat tab. **IRC needs no password** (`passwordOptional`), so it is the protocol you can
+provision this way — e.g. a `libera` account with
+`"username": "yournick@irc.libera.chat"`. `omarchy-thunderbird-chat` reports what is
+configured.
+
+## Keeping the widget current
+
+`omarchy-thunderbird-watch` watches the profile's mail stores (inotify, with an mtime
+poll fallback) and calls the widget's IPC handler when mail changes:
+
+```bash
+qs ipc call Maximilian-Maag.thunderbird refresh
+```
+
+install.sh puts it on `PATH` and adds it to Hyprland's autostart, so the bar updates on
+new mail; the widget's own timer is a five-minute safety net.
 
 ## Guard extension
 
@@ -172,8 +207,10 @@ It scores each displayed message with a pure heuristics engine (`extension/guard
 - sender: brand impersonation, a display name hiding a different address, Reply-To
   mismatch, SPF/DKIM/DMARC failures, and lookalike domains of your known contacts.
 
-On `warn`/`danger` it tags the message `suspicious` and raises a notification. It is a
-heuristic aid, not a guarantee — it pairs with Thunderbird's own spam detection.
+On `warn`/`danger` it tags the message `suspicious`, raises a notification, and shows a
+banner at the top of the message itself (registered via
+`messageDisplayScripts.register()`). It is a heuristic aid, not a guarantee — it pairs
+with Thunderbird's own spam detection.
 
 ## Calendar and chat
 
@@ -188,13 +225,17 @@ All three read the real Thunderbird profile. The calendar backend reads
 expands recurring events from `cal_recurrence.icalString` — a weekly meeting shows its
 next occurrence, not a stale master date. A single occurrence you reschedule (a detached
 exception) shows at its new time and its original slot is suppressed, so a moved meeting
-does not appear twice. Supported RRULE subset: FREQ
+does not appear twice. Zoned and UTC events render in the machine's local timezone;
+all-day dates and floating events render exactly as stored (all-day dates with no time
+of day), so neither is shifted by the local offset. Supported RRULE subset: FREQ
 (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; cancelled
-occurrences (EXDATE) are excluded and extra ones (RDATE) added; anything else falls
-back to the master occurrence. The chat backend reports accounts stored under
-`chat.prpls.*` — creating a chat account needs credentials, so that stays a one-time
-step in Thunderbird's own Chat tab, which has no command-line flag (unlike `-mail`,
-`-calendar`, `-addressbook`, `-compose`).
+occurrences (EXDATE) are excluded and extra ones (RDATE) added, and a UTC UNTIL/EXDATE
+is converted to local time before comparison; anything else falls back to the master
+occurrence. The chat backend reports accounts stored under `messenger.account.<key>.*`
+— a credential-free account (IRC) can be declared in `config/chat.json`, but a protocol
+that needs a password (Matrix, XMPP) still has to be added in Thunderbird's own Chat
+tab, which has no command-line flag (unlike `-mail`, `-calendar`, `-addressbook`,
+`-compose`).
 
 ## Testing
 

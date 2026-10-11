@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Report the chat accounts configured in a Thunderbird profile.
 
-Thunderbird's chat accounts are stored as preferences under ``chat.prpls.<protocol>.
-<account>.<field>`` in the profile's ``prefs.js``. This reads those keys so the comms
-widget (and you) can see which chat protocols Thunderbird actually has wired up.
+Thunderbird keeps chat accounts under the ``messenger.account.<key>.*`` preference
+namespace and reads them with ``imAccounts.sys.mjs``:
+``Services.prefs.getBranch("messenger.account." + key + ".")``. Account *options*
+(the nickname, server, …) live one level deeper, under ``options.``, because every
+option setter prefixes them with it. This reads those keys so the comms widget (and
+you) can see which chat protocols Thunderbird actually has wired up.
 
     omarchy-thunderbird-chat            # human readable summary
     omarchy-thunderbird-chat --json     # machine readable
 
-Account *creation* is deliberately not automated: a chat account needs credentials
-(and often an access token) that cannot be guessed, so it stays a one-time step in
-Thunderbird's own UI. This tool reports what exists; it does not invent accounts.
+Accounts can be *declared* in ``config/chat.json`` and applied with
+``omarchy-thunderbird-apply`` — but only credential-free ones (IRC). A password is not
+a preference: it goes to the system login store, so protocols that need one (Matrix,
+XMPP) still have to be added in Thunderbird's own Chat tab. This tool reports what
+exists; it does not invent accounts.
 """
 
 import argparse
@@ -22,16 +27,35 @@ import sys
 
 PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
 
-# chat.prpls.prpl-irc.<accountkey>.<field> — protocol, then account key
-ACCOUNT_PREF = re.compile(r'user_pref\(\s*"chat\.prpls\.([a-z0-9-]+)\.([A-Za-z0-9_]+)\.')
+# user_pref("messenger.account.<key>.<field>", <value>);
+ACCOUNT_PREF = re.compile(
+    r'user_pref\(\s*"messenger\.account\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.]+)"\s*,\s*(.+?)\);')
+CHANNEL = re.compile(r'[^A-Za-z0-9_-]')
+
+
+def _unquote(raw):
+    raw = raw.strip()
+    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+        return raw[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return raw
 
 
 def accounts_from_prefs(text: str):
-    """{protocol: sorted set of account keys} from a prefs.js body."""
+    """{account key: {field: value}} from a prefs.js body."""
     found = {}
-    for protocol, account in ACCOUNT_PREF.findall(text):
-        found.setdefault(protocol, set()).add(account)
-    return {protocol: sorted(keys) for protocol, keys in found.items()}
+    for key, field, raw in ACCOUNT_PREF.findall(text or ""):
+        found.setdefault(key, {})[field] = _unquote(raw)
+    return found
+
+
+def group_by_protocol(accounts):
+    """{protocol: sorted [account keys]} — accounts without a prpl are ignored."""
+    grouped = {}
+    for key in sorted(accounts):
+        protocol = accounts[key].get("prpl")
+        if protocol:
+            grouped.setdefault(protocol, []).append(key)
+    return grouped
 
 
 def resolve_profile(explicit):
@@ -58,16 +82,19 @@ def main(argv=None) -> int:
     prefs = profile / "prefs.js"
     text = prefs.read_text(errors="replace") if prefs.is_file() else ""
     accounts = accounts_from_prefs(text)
+    protocols = group_by_protocol(accounts)
 
     if args.json:
         print(json.dumps({
-            "protocols": accounts,
-            "accounts": sum(len(v) for v in accounts.values()),
+            "accounts": sum(len(v) for v in protocols.values()),
+            "protocols": protocols,
+            "names": {key: accounts[key].get("name", "") for key in accounts},
         }, indent=2))
-    elif not accounts:
-        print("No chat accounts configured (add them in Thunderbird's Chat tab).")
+    elif not protocols:
+        print("No chat accounts configured (declare IRC in config/chat.json, or add "
+              "accounts in Thunderbird's Chat tab).")
     else:
-        for protocol, keys in sorted(accounts.items()):
+        for protocol, keys in sorted(protocols.items()):
             print("%-14s %d account(s)" % (protocol, len(keys)))
     return 0
 

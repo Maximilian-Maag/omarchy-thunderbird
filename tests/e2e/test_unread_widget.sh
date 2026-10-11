@@ -60,9 +60,9 @@ import datetime, sqlite3, sys
 start = datetime.datetime.now() + datetime.timedelta(hours=3)
 us = int(start.timestamp()) * 1000000
 c = sqlite3.connect(sys.argv[1])
-c.execute("CREATE TABLE cal_events (id TEXT, cal_id TEXT, title TEXT, event_start INTEGER, event_end INTEGER, ical_status TEXT, recurrence_id INTEGER)")
-c.execute("INSERT INTO cal_events VALUES (?,?,?,?,?,?,?)",
-          ("1", "cal", "Dentist", us, us + 3600 * 1000000, "CONFIRMED", None))
+c.execute("CREATE TABLE cal_events (id TEXT, cal_id TEXT, title TEXT, event_start INTEGER, event_end INTEGER, ical_status TEXT, recurrence_id INTEGER, flags INTEGER, event_start_tz TEXT)")
+c.execute("INSERT INTO cal_events VALUES (?,?,?,?,?,?,?,?,?)",
+          ("1", "cal", "Dentist", us, us + 3600 * 1000000, "CONFIRMED", None, 0, None))
 c.commit(); c.close()
 PY
 count="$(XDG_CONFIG_HOME="$ROOT" "$E2E_REPO/bin/omarchy-thunderbird-calendar" --count 2>/dev/null)"

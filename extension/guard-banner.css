@@ -1,0 +1,35 @@
+/* Warning banner injected into the message display document. */
+.omarchy-guard-banner {
+  display: block;
+  margin: 0 0 8px 0;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 4px solid currentColor;
+  font: menu;
+}
+
+.omarchy-guard-banner strong {
+  margin-right: 6px;
+}
+
+.omarchy-guard-warn {
+  color: #7a5c00;
+  background: #fff4d5;
+}
+
+.omarchy-guard-danger {
+  color: #8a1f1f;
+  background: #ffe3e3;
+}
+
+@media (prefers-color-scheme: dark) {
+  .omarchy-guard-warn {
+    color: #ffd66b;
+    background: #4a3c10;
+  }
+
+  .omarchy-guard-danger {
+    color: #ffb3b3;
+    background: #4a1717;
+  }
+}

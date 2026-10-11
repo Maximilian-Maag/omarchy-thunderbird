@@ -87,5 +87,46 @@
     };
   }
 
-  return { domainOf: domainOf, domainMatches: domainMatches, ruleMatches: ruleMatches, resolveActions: resolveActions };
+  function flattenFolders(folders, out) {
+    (folders || []).forEach(function (folder) {
+      if (!folder) return;
+      out.push({
+        name: String(folder.name || ""),
+        path: String(folder.path || folder.name || ""),
+      });
+      flattenFolders(folder.subFolders || folder.children, out);
+    });
+    return out;
+  }
+
+  // Resolve a configured destination name to a concrete folder. Exact name matches win
+  // over a mere path-segment match, and the first account/folder in order wins, so the
+  // outcome is deterministic. Returns null when nothing matches, which the caller treats
+  // as "tag only, do not move" — never guess a folder.
+  function chooseFolder(accounts, destination) {
+    var want = String(destination || "").trim().toLowerCase();
+    if (!want) return null;
+    var candidates = [];
+    (accounts || []).forEach(function (account) {
+      var accountId = account && account.accountId !== undefined ? account.accountId : (account || {}).id;
+      flattenFolders(account && account.folders, []).forEach(function (folder) {
+        candidates.push({ accountId: accountId, path: folder.path, name: folder.name.toLowerCase() });
+      });
+    });
+    var exact = candidates.filter(function (c) { return c.name === want; })[0];
+    if (exact) return { accountId: exact.accountId, path: exact.path };
+    var partial = candidates.filter(function (c) {
+      return c.path.toLowerCase().split("/").indexOf(want) !== -1;
+    })[0];
+    return partial ? { accountId: partial.accountId, path: partial.path } : null;
+  }
+
+  return {
+    domainOf: domainOf,
+    domainMatches: domainMatches,
+    ruleMatches: ruleMatches,
+    resolveActions: resolveActions,
+    flattenFolders: flattenFolders,
+    chooseFolder: chooseFolder,
+  };
 });
