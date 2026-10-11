@@ -55,7 +55,30 @@ class ManifestCase(unittest.TestCase):
         for name in scripts:
             self.assertTrue((EXT / name).is_file(), "missing %s" % name)
 
-    def test_requests_the_mail_permissions_it_uses(self):
+    # Each WebExtension API the background calls, mapped to the permission it
+    # requires (Thunderbird's schemas: messages.update needs messagesUpdate and
+    # messages.move needs messagesMove — NOT the coarse messagesModify, which only
+    # gates script injection). Deriving the required set from the source means a new
+    # call cannot slip in without its permission, which is exactly how the missing
+    # messagesUpdate/messagesMove went unnoticed until it was checked by hand.
+    API_PERMISSIONS = {
+        "browser.messages.update(": "messagesUpdate",
+        "browser.messages.move(": "messagesMove",
+        "browser.messages.get(": "messagesRead",
+        "browser.messages.getFull(": "messagesRead",
+        "browser.accounts.list(": "accountsRead",
+        "browser.messageDisplayScripts.register(": "messagesModify",
+        "browser.notifications.create(": "notifications",
+    }
+
+    def test_requests_every_permission_the_background_needs(self):
+        source = (EXT / "background.js").read_text()
+        for call, perm in self.API_PERMISSIONS.items():
+            if call in source:
+                self.assertIn(perm, self.manifest["permissions"],
+                              "%s needs the %s permission" % (call, perm))
+
+    def test_requests_the_base_permissions_it_uses(self):
         for perm in ("messagesRead", "messagesModify", "storage", "notifications"):
             self.assertIn(perm, self.manifest["permissions"])
 

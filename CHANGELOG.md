@@ -2,6 +2,23 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.1] — 2026-10-11
+
+### Fixed
+- **The extension was missing the permissions its own features need, so tagging and
+  filing silently did nothing.** `browser.messages.update` requires `messagesUpdate`
+  and `browser.messages.move` requires `messagesMove` (Thunderbird's schemas/messages
+  .json — the coarse `messagesModify` the manifest carried only gates script
+  injection, not message mutation). Without them every `messages.update` call threw
+  and was swallowed by the guard's defensive try/catch, so a suspect message was never
+  tagged and an auto-sort rule never filed or tagged anything — the marquee 1.9.0
+  features reported success in the tests while doing nothing in Thunderbird.
+
+### Testing
+- The manifest test now derives the required permission set from the API calls in
+  `background.js` (a call→permission map) instead of listing the permissions the
+  manifest already had, so a new call cannot be added without its permission.
+
 ## [1.9.0] — 2026-10-11
 
 Closes the four gaps left after 1.8.0.
