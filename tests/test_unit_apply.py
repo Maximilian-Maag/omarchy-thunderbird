@@ -302,7 +302,8 @@ class ProvisionCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             profile = pathlib.Path(tmp)
             (profile / "prefs.js").write_text('user_pref("mail.accountmanager.accounts", "");\n')
-            n = apply.provision_accounts(profile, [{"id": 1, "name": "Libera", "protocol": "prpl-irc"}])
+            with mock.patch.object(apply, "thunderbird_running", lambda: False):
+                n = apply.provision_accounts(profile, [{"id": 1, "name": "Libera", "protocol": "prpl-irc"}])
             self.assertEqual(n, 1)
             text = (profile / "prefs.js").read_text()
             self.assertIn('user_pref("mail.server.server1.type", "im");', text)

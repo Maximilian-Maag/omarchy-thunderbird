@@ -231,7 +231,9 @@ of day), so neither is shifted by the local offset. Supported RRULE subset: FREQ
 (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; cancelled
 occurrences (EXDATE) are excluded and extra ones (RDATE) added, and a UTC UNTIL/EXDATE
 is converted to local time before comparison; anything else falls back to the master
-occurrence. The chat backend reports accounts stored under `messenger.account.<key>.*`.
+occurrence. In a MONTHLY rule BYDAY may carry an ordinal (`2TU` is the second Tuesday,
+`-1FR` the last Friday) and BYMONTHDAY may be negative (`-1` is the last day of the
+month). The chat backend reports accounts stored under `messenger.account.<key>.*`.
 `config/chat.json` provisions chat accounts: declare each one's Thunderbird account number
 (`id`) and `omarchy-thunderbird-apply` registers it with Thunderbird's account manager (so
 it appears in the Chat tab) and writes its config. Only credential-free accounts (IRC) can

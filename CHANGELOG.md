@@ -2,6 +2,21 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.4] — 2026-10-11
+
+### Fixed
+- **Monthly `BYDAY` and negative `BYMONTHDAY` were not expanded, though documented as
+  supported.** `FREQ=MONTHLY;BYDAY=2TU` (the second Tuesday) was ignored and the event
+  rendered on its master's day-of-month — the wrong weekday — while `BYMONTHDAY=-1` (the
+  last day of the month) produced no occurrences at all. A MONTHLY rule now honours
+  `BYDAY` with an ordinal (`2TU`, `-1FR`), with none (every Tuesday in the month), or with
+  several tokens, and a negative `BYMONTHDAY` counts back from the month's end.
+
+### Testing
+- Cases for the nth/last weekday, multiple `BYDAY` tokens, an ordinal that does not exist
+  in a given month, and the last-day `BYMONTHDAY`; the unexpandable-rule fallback is
+  pinned through `upcoming`.
+
 ## [1.9.3] — 2026-10-11
 
 ### Added

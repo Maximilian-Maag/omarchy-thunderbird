@@ -295,6 +295,48 @@ class RecurrenceCase(unittest.TestCase):
     def test_an_unsupported_freq_produces_nothing(self):
         self.assertEqual(self.expand("FREQ=HOURLY"), [])
 
+    # ── MONTHLY BYDAY / negative BYMONTHDAY ──────────────────────────────────
+    def jan8(self):
+        return datetime.datetime(2030, 1, 8, 9, 0)  # the 2nd Tuesday of Jan 2030
+
+    def test_monthly_byday_ordinal_picks_the_nth_weekday(self):
+        occ = self.expand("FREQ=MONTHLY;BYDAY=2TU", horizon_days=200, start=self.jan8())
+        self.assertTrue(all(d.weekday() == 1 for d in occ))  # every one a Tuesday
+        self.assertEqual([(d.month, d.day) for d in occ][:3], [(1, 8), (2, 12), (3, 12)])
+
+    def test_monthly_byday_negative_ordinal_picks_the_last_weekday(self):
+        occ = self.expand("FREQ=MONTHLY;BYDAY=-1FR", horizon_days=200, start=self.jan8())
+        self.assertTrue(all(d.weekday() == 4 for d in occ))  # every one a Friday
+        self.assertEqual([(d.month, d.day) for d in occ][:3], [(1, 25), (2, 22), (3, 29)])
+
+    def test_monthly_byday_without_an_ordinal_is_every_weekday(self):
+        occ = self.expand("FREQ=MONTHLY;BYDAY=TU", horizon_days=40, start=self.jan8())
+        self.assertTrue(all(d.weekday() == 1 for d in occ))
+        self.assertGreater(len(occ), 4)  # several Tuesdays, not one
+
+    def test_monthly_byday_with_multiple_tokens(self):
+        occ = self.expand("FREQ=MONTHLY;BYDAY=1MO,-1FR", horizon_days=70, start=self.jan8())
+        self.assertTrue(all(d.weekday() in (0, 4) for d in occ))
+        # first Monday and last Friday each month, on/after the start (Jan 7 precedes it)
+        self.assertEqual([(d.month, d.day) for d in occ][:2], [(1, 25), (2, 4)])
+
+    def test_monthly_byday_ordinal_beyond_the_month_is_skipped(self):
+        # A 5th Monday exists only in some months — no crash, just skipped.
+        occ = self.expand("FREQ=MONTHLY;BYDAY=5MO", horizon_days=120, start=self.jan8())
+        self.assertTrue(all(d.weekday() == 0 for d in occ))
+        self.assertIn((4, 29), [(d.month, d.day) for d in occ])
+
+    def test_monthly_byday_with_an_unknown_weekday_expands_to_nothing(self):
+        # No token resolves, so the rule yields nothing (the caller then falls back).
+        self.assertEqual(self.expand("FREQ=MONTHLY;BYDAY=XX", horizon_days=60, start=self.jan8()), [])
+
+    def test_monthly_negative_bymonthday_is_the_last_day(self):
+        occ = self.expand("FREQ=MONTHLY;BYMONTHDAY=-1", horizon_days=170, start=self.jan8())
+        self.assertEqual([(d.month, d.day) for d in occ][:4], [(1, 31), (2, 28), (3, 31), (4, 30)])
+
+    def test_monthly_bymonthday_zero_expands_to_nothing(self):
+        self.assertEqual(self.expand("FREQ=MONTHLY;BYMONTHDAY=0", horizon_days=60, start=self.jan8()), [])
+
     def test_a_missing_rule_is_none_and_one_occurrence_is_returned(self):
         self.assertEqual(cal.expand_occurrences(self.monday, None, self.monday + datetime.timedelta(days=1)),
                          [self.monday])
@@ -500,6 +542,15 @@ class RecurringEventCase(unittest.TestCase):
         self.assertIsNotNone(events[0]["rule"])
         self.assertEqual(events[0]["rule"]["FREQ"], "WEEKLY")
         self.assertTrue(cal.upcoming(events, days=7))
+
+    def test_an_unexpandable_monthly_rule_falls_back_to_the_master_event(self):
+        start = datetime.datetime.now() + datetime.timedelta(days=2)
+        event = {"title": "Odd", "start_usecs": usecs(start),
+                 "end_usecs": usecs(start + datetime.timedelta(hours=1)),
+                 "status": "CONFIRMED", "calendar": "cal", "id": "x",
+                 "rule": cal.parse_rrule("RRULE:FREQ=MONTHLY;BYDAY=XX")}
+        occ = cal.upcoming([event], days=7)
+        self.assertEqual([o["title"] for o in occ], ["Odd"])
 
     def test_a_non_recurring_event_still_shows_once(self):
         start = datetime.datetime.now() + datetime.timedelta(hours=2)

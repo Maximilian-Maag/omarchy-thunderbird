@@ -23,9 +23,11 @@ The database is copied to a temporary directory before reading, because Thunderb
 holds a lock on the live file while running.
 
 Supported RRULE subset: FREQ (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL,
-BYDAY and BYMONTHDAY. Cancelled occurrence days (EXDATE) are excluded and extra ones
-(RDATE) included; a rule using other parts is not expanded (that event falls back to
-its master occurrence). Zoned and UTC events render in the machine's local timezone;
+BYDAY and BYMONTHDAY. In a MONTHLY rule BYDAY may carry an ordinal (``2TU`` is the second
+Tuesday, ``-1FR`` the last Friday) and BYMONTHDAY may be negative (``-1`` is the last day
+of the month). Cancelled occurrence days (EXDATE) are excluded and extra ones (RDATE)
+included; a rule using other parts is not expanded (that event falls back to its master
+occurrence). Zoned and UTC events render in the machine's local timezone;
 all-day dates and floating events render exactly as stored (no offset shift), all-day
 dates without a time of day. A UTC UNTIL/EXDATE (…Z) is converted to local time before
 comparison so the boundary occurrence is not dropped.
@@ -208,9 +210,45 @@ def _daily_occurrences(start, interval, byday, horizon, limit):
     return out
 
 
-def _monthly_occurrences(start, interval, bymonthday, horizon, limit):
+def _monthly_byday_days(year, month, byday):
+    """Day-of-month numbers in (year, month) matching the BYDAY tokens.
+
+    A token is an optional ordinal followed by a weekday: ``TU`` (every Tuesday in the
+    month), ``2TU`` (the second Tuesday), ``-1FR`` (the last Friday).
+    """
+    last = _calendar.monthrange(year, month)[1]
+    days = set()
+    for token in byday:
+        match = re.match(r"^([+-]?\d+)?([A-Za-z]{2})$", token)
+        if not match:
+            continue
+        weekday = WEEKDAYS.get(match.group(2).upper())
+        if weekday is None:
+            continue
+        matching = [d for d in range(1, last + 1)
+                    if datetime.date(year, month, d).weekday() == weekday]
+        if not matching:
+            continue
+        ordinal = int(match.group(1)) if match.group(1) else 0
+        if ordinal == 0:
+            days.update(matching)
+        else:
+            try:
+                days.add(matching[ordinal - 1] if ordinal > 0 else matching[ordinal])
+            except IndexError:
+                pass
+    return sorted(days)
+
+
+def _monthly_days_in_month(y, m, bymonthday):
+    """Day-of-month numbers in (y, m); a negative value counts back from the end."""
+    last = _calendar.monthrange(y, m)[1]
+    return sorted({d if d > 0 else last + 1 + d for d in bymonthday
+                   if 1 <= (d if d > 0 else last + 1 + d) <= last})
+
+
+def _monthly_occurrences(start, interval, byday, bymonthday, horizon, limit):
     out = []
-    days = bymonthday or [start.day]
     year, month, step = start.year, start.month, 0
     while len(out) < limit:
         y = year + (month - 1 + step * interval) // 12
@@ -218,6 +256,12 @@ def _monthly_occurrences(start, interval, bymonthday, horizon, limit):
         first = datetime.datetime(y, m, 1)
         if first > horizon:
             break
+        if byday:
+            days = _monthly_byday_days(y, m, byday)
+        elif bymonthday:
+            days = _monthly_days_in_month(y, m, bymonthday)
+        else:
+            days = [start.day]
         for day in days:
             try:
                 # Preserve the event's time-of-day (and tz-naivity); only move the date.
@@ -274,7 +318,7 @@ def expand_occurrences(start, rule, horizon, limit=MAX_OCCURRENCES):
     elif freq == "WEEKLY":
         found = _weekly_occurrences(start, interval, byday, horizon, limit)
     elif freq == "MONTHLY":
-        found = _monthly_occurrences(start, interval, bymonthday, horizon, limit)
+        found = _monthly_occurrences(start, interval, byday, bymonthday, horizon, limit)
     elif freq == "YEARLY":
         found = _yearly_occurrences(start, interval, horizon, limit)
     else:

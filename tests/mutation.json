@@ -167,6 +167,13 @@
         "-m",
         "unittest",
         "tests.test_unit_calendar"
+      ],
+      "equivalent": [
+        {
+          "line": 237,
+          "kind": "gt->ge",
+          "reason": "`ordinal > 0` in _monthly_byday_days selects the positive-ordinal branch; the enclosing `if ordinal == 0` already excludes zero, so > and >= pick the same branch for every reachable value. Not observable."
+        }
       ]
     },
     {
