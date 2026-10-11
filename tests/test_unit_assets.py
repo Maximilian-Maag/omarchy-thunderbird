@@ -11,9 +11,11 @@ import re
 import unittest
 
 try:  # `discover -s tests` puts tests/ on sys.path; `-m unittest tests.x` does not
-    from tb_prefs import thunderbird_policy_schema, thunderbird_prefs
+    from tb_prefs import (thunderbird_policy_schema, thunderbird_policy_pref_prefixes,
+                          thunderbird_prefs)
 except ImportError:  # pragma: no cover - the other invocation style
-    from tests.tb_prefs import thunderbird_policy_schema, thunderbird_prefs
+    from tests.tb_prefs import (thunderbird_policy_schema,
+                                thunderbird_policy_pref_prefixes, thunderbird_prefs)
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CSS = REPO / "themes/userChrome.css"
@@ -126,6 +128,19 @@ class PoliciesCase(unittest.TestCase):
         for key in self.data.get("Preferences", {}):
             self.assertTrue(key in defaults or key in referenced,
                             "policy pref %s is not a pref Thunderbird knows" % key)
+
+    def test_every_policy_pref_is_one_the_policy_engine_accepts(self):
+        # Being a real pref is not enough: the `Preferences` policy drops any pref outside
+        # its own allowlist with "not allowed for stability reasons", so it is still inert
+        # and belongs in user.js. toolkit.* and datareporting.healthreport.* are the traps
+        # (only datareporting.policy. is allowed).
+        prefixes = thunderbird_policy_pref_prefixes()
+        if prefixes is None:
+            self.skipTest("Thunderbird Policies.sys.mjs not found; cannot check prefixes")
+        rejected = [k for k in self.data.get("Preferences", {})
+                    if not any(k.startswith(p) for p in prefixes)]
+        self.assertEqual(rejected, [],
+                         "prefs the policy engine would reject: %s" % rejected)
 
     def test_every_policy_pref_is_on_the_allowlist(self):
         # A pref outside these prefixes does nothing (TB rejects it) — silent config

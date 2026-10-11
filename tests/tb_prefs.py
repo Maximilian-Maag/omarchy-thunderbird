@@ -20,6 +20,7 @@ OMNI_CANDIDATES = [
 ]
 
 POLICY_SCHEMA_MEMBER = "modules/policies/policies-schema.json"
+POLICIES_MODULE = "modules/policies/Policies.sys.mjs"
 
 # A pref declared with a built-in default: pref("name", value);
 DEFAULT_PAIR = re.compile(r'pref\(\s*"([^"]+)"\s*,\s*([^;\n]*?)\s*\)')
@@ -45,21 +46,45 @@ def literal(raw):
     return raw
 
 
+def _omni_member(name):
+    """The decoded text of one member of the installed omni.ja, or None."""
+    omni = next((p for p in OMNI_CANDIDATES if p.is_file()), None)
+    if omni is None:
+        return None
+    try:
+        with zipfile.ZipFile(omni) as archive:
+            return archive.read(name).decode("utf-8", "replace")
+    except (KeyError, OSError, zipfile.BadZipFile):
+        return None
+
+
 def thunderbird_policy_schema():
     """The set of enterprise-policy names the installed Thunderbird accepts, else None.
 
     Thunderbird validates distribution/policies.json against this schema; a policy
     name absent from it has no handler and is silently ignored.
     """
-    omni = next((p for p in OMNI_CANDIDATES if p.is_file()), None)
-    if omni is None:
+    body = _omni_member(POLICY_SCHEMA_MEMBER)
+    if body is None:
         return None
-    with zipfile.ZipFile(omni) as archive:
-        try:
-            body = archive.read(POLICY_SCHEMA_MEMBER).decode("utf-8", "replace")
-        except (KeyError, OSError):
-            return None
     return set(json.loads(body).get("properties", {}))
+
+
+def thunderbird_policy_pref_prefixes():
+    """The pref prefixes Thunderbird's `Preferences` policy will accept, else None.
+
+    Policies.sys.mjs drops every other pref with "not allowed for stability reasons", so
+    a real pref outside this list is still inert in policies.json — `toolkit.*` and
+    `datareporting.healthreport.*` (only `datareporting.policy.` is allowed) are the traps,
+    and belong in user.js instead.
+    """
+    body = _omni_member(POLICIES_MODULE)
+    if body is None:
+        return None
+    block = re.search(r"const allowedPrefixes = \[(.*?)\];", body, re.S)
+    if not block:
+        return None
+    return re.findall(r'"([^"]+)"', block.group(1))
 
 
 def thunderbird_prefs():
