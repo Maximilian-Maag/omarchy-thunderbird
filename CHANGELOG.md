@@ -2,6 +2,17 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.7] — 2026-10-11
+
+### Added
+- **Custom and future Omarchy themes now apply instead of silently rendering catppuccin.**
+  A theme with no curated block is derived from its own `colors.toml` (mode, background,
+  foreground, accent, selection, muted, the background shades) — so a user's own theme, or
+  one a later Omarchy release adds, follows the machine instead of a bundled snapshot. The 22
+  stock palettes are hand-tuned (their accent is deliberately not always the toml's) and still
+  take precedence. `omarchy-tb-render-css` gained a `--theme-dir` to point the lookup at
+  another theme root.
+
 ## [1.9.6] — 2026-10-11
 
 ### Fixed

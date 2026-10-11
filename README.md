@@ -6,7 +6,7 @@
 
 | Feature | Details |
 |---------|---------|
-| **22 Omarchy themes** | Full chrome + message-body coverage for every stock theme. Applied by rendering the active theme into `userChrome.css`, so it works with **no userChromeJS loader** |
+| **Omarchy themes** | Full chrome + message-body coverage for all 22 stock themes, plus any other theme (custom, or added later) derived from its own `colors.toml`. Applied by rendering the active theme into `userChrome.css`, so it works with **no userChromeJS loader** |
 | **Instant reload** | `omarchy-thunderbird-reload` applies the current theme and restarts Thunderbird so the change is visible now (Thunderbird reads the stylesheet at startup) |
 | **Unread bar widget** | Unread count in the Omarchy bar (`Maximilian-Maag.thunderbird`); click to open Thunderbird |
 | **Guard extension** | Scores every message for scam/phishing risk; tags suspect mail `suspicious`, warns, and shows an in-message banner |
@@ -66,6 +66,10 @@ gruvbox · hackerman · kanagawa · last-horizon · lumon · lupine · matte-bla
 miasma · nord · osaka-jade · retro-82 · ristretto · rose-pine · solitude ·
 tokyo-night · vantablack · white
 
+Any *other* theme — your own, or one a later Omarchy release adds — is derived on the fly from
+that theme's `colors.toml`, so a custom theme no longer silently falls back to catppuccin. The
+22 stock palettes above are hand-tuned and take precedence over the derivation.
+
 Thunderbird reads `chrome/userChrome.css` only when it starts, so a theme change lands on
 the next launch. `omarchy-thunderbird-reload` restarts it for you when you want it now; set
 `OMARCHY_THUNDERBIRD_AUTORELOAD=1` to have the `theme-set` hook do that on every switch.
@@ -95,7 +99,7 @@ counted. For the common local / offline case the count is exact.
 ```
 omarchy-thunderbird/
 ├── themes/
-│   └── userChrome.css      — all 22 theme palettes (source of truth for the renderer)
+│   └── userChrome.css      — curated palettes for the 22 stock themes
 ├── config/
 │   ├── tags.json           — declarative tag definitions
 │   ├── settings.json       — declarative preference overrides

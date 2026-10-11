@@ -22,12 +22,14 @@ declarations into the fallback ``:root`` block, producing a plain stylesheet tha
 works with no loader. The attribute blocks are kept untouched for anyone who does run
 a loader.
 
-It is pure text in, text out — no theme knowledge of its own — so the hook and the
-installer both call it, and the palette keeps a single source of truth
-(themes/userChrome.css).
+The stock themes' blocks are curated by hand in themes/userChrome.css (their accent is
+not always the colors.toml one). For any *other* theme — a user's own, or one added
+later — the palette is derived from that theme's colors.toml, so the plugin follows
+whatever theme is actually set on the machine rather than a bundled snapshot.
 """
 
 import argparse
+import colorsys
 import os
 import pathlib
 import re
@@ -91,6 +93,93 @@ div.moz-cite-prefix {
 """
 
 
+# Where Omarchy keeps a theme's palette. A theme is defined by its colors.toml
+# (mode, background, foreground, accent, selection, muted and the ANSI colours); the
+# user's own themes live under the config dir and shadow the system ones.
+DEFAULT_THEME_DIRS = (
+    pathlib.Path.home() / ".config" / "omarchy" / "themes",
+    pathlib.Path("/usr/share/omarchy/themes"),
+)
+TOML_LINE = re.compile(r'^\s*([A-Za-z_]+)\s*=\s*"([^"]*)"', re.M)
+
+
+def read_palette(theme, theme_dirs):
+    """The theme's colors.toml as {key: value}, or None when there is none.
+
+    Only a palette with a background *and* a foreground can be used; a colors.toml
+    missing either is ignored (the search continues, then falls back).
+    """
+    if not theme:
+        return None
+    for base in theme_dirs:
+        path = pathlib.Path(base).expanduser() / theme / "colors.toml"
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        palette = {k.lower(): v.strip() for k, v in TOML_LINE.findall(text)}
+        if palette.get("background") and palette.get("foreground"):
+            return palette
+    return None
+
+
+def _shade(color, factor=0.9):
+    """A slightly darker shade of a #rrggbb — the hover state of a button."""
+    try:
+        r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+    except (ValueError, IndexError):
+        return color
+    hue, level, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    r2, g2, b2 = colorsys.hls_to_rgb(hue, max(0.0, level * factor), sat)
+    return "#%02x%02x%02x" % (round(r2 * 255), round(g2 * 255), round(b2 * 255))
+
+
+def derived_block(palette):
+    """The :root body for a theme we have no curated block for, from its colors.toml.
+
+    The curated blocks for the stock themes are hand-tuned (their accent is not always
+    the toml's ``accent``), so they win when present; this is what a user's own theme
+    gets instead of silently rendering catppuccin.
+    """
+    background = palette["background"]
+    foreground = palette["foreground"]
+    accent = palette.get("accent") or foreground
+    lighter = palette.get("lighter_background") or background
+    darker = palette.get("dark_background") or background
+    selection = palette.get("selection") or lighter
+    muted = palette.get("dark_foreground") or background
+    order = (
+        ("--toolbar-bgcolor", background),
+        ("--toolbar-color", foreground),
+        ("--toolbarbutton-hover-background", lighter),
+        ("--toolbarbutton-active-background", selection),
+        ("--tabs-toolbar-background-color", darker),
+        ("--tab-selected-bgcolor", lighter),
+        ("--tab-selected-color", foreground),
+        ("--tab-hover-background-color", selection),
+        ("--sidebar-background-color", darker),
+        ("--sidebar-text-color", muted),
+        ("--sidebar-border-color", lighter),
+        ("--folder-pane-background", background),
+        ("--folder-pane-color", foreground),
+        ("--thread-pane-background", darker),
+        ("--thread-pane-color", foreground),
+        ("--message-pane-background", background),
+        ("--button-primary-bgcolor", accent),
+        ("--button-primary-color", background),
+        ("--button-primary-hover-bgcolor", _shade(accent)),
+        ("--focus-outline-color", accent),
+        ("--selected-item-color", accent),
+        ("--selected-item-text-color", background),
+        ("--lwt-highlight-text", foreground),
+        ("--lwt-text-color", foreground),
+        ("--splitter-color", lighter),
+    )
+    lines = ["  color-scheme: %s;" % ("light" if palette.get("mode") == "light" else "dark")]
+    lines += ["  %s: %s;" % (name, value) for name, value in order]
+    return "\n" + "\n".join(lines) + "\n"
+
+
 def _theme_block(css: str, theme: str):
     """Body of the ``:root[data-omarchy-theme="<theme>"]`` rule, or None."""
     match = re.search(
@@ -99,31 +188,34 @@ def _theme_block(css: str, theme: str):
     return match.group(1) if match else None
 
 
-def _theme_decls(css: str, theme: str):
-    """{variable: value} for the theme, falling back to the bundled :root block."""
-    body = _theme_block(css, theme)
-    resolved = theme
-    if body is None:
-        resolved = "catppuccin (fallback)"
-        match = FALLBACK_BLOCK.search(css)
-        body = match.group(2) if match else ""
-    return resolved, {k: v.strip() for k, v in DECL.findall(body)}
-
-
-def render(css: str, theme: str) -> str:
-    """Return `css` (userChrome.css) with the theme's declarations applied to :root.
-
-    When the theme has no block, the stylesheet's own fallback declarations are kept
-    verbatim — the file must never end up with an empty :root (that would drop every
-    colour to Thunderbird's defaults).
-    """
-    anchor = FALLBACK_BLOCK.search(css)
+def _resolve(css: str, theme: str, theme_dirs):
+    """(label, :root body) for a theme: its curated block, else a colors.toml
+    derivation, else the stylesheet's own bundled fallback."""
     body = _theme_block(css, theme)
     if body is not None:
-        applied = theme
-    else:
-        applied = "catppuccin (fallback)"
-        body = anchor.group(2) if anchor else ""
+        return theme, body
+    palette = read_palette(theme, theme_dirs)
+    if palette is not None:
+        return "%s (derived from colors.toml)" % theme, derived_block(palette)
+    match = FALLBACK_BLOCK.search(css)
+    return "catppuccin (fallback)", (match.group(2) if match else "")
+
+
+def _theme_decls(css: str, theme: str, theme_dirs=DEFAULT_THEME_DIRS):
+    """{variable: value} for the theme, falling back to the bundled :root block."""
+    applied, body = _resolve(css, theme, theme_dirs)
+    return applied, {k: v.strip() for k, v in DECL.findall(body)}
+
+
+def render(css: str, theme: str, theme_dirs=DEFAULT_THEME_DIRS) -> str:
+    """Return `css` (userChrome.css) with the theme's declarations applied to :root.
+
+    When the theme has no curated block its palette is derived from its colors.toml;
+    when it has neither, the stylesheet's own fallback declarations are kept verbatim —
+    the file must never end up with an empty :root (that would drop every colour to
+    Thunderbird's defaults).
+    """
+    applied, body = _resolve(css, theme, theme_dirs)
 
     banner = "\n  /* omarchy-thunderbird: applied theme = %s */\n" % applied
 
@@ -137,9 +229,9 @@ def render(css: str, theme: str) -> str:
     return out
 
 
-def render_content(css: str, theme: str) -> str:
+def render_content(css: str, theme: str, theme_dirs=DEFAULT_THEME_DIRS) -> str:
     """Return a userContent.css recoloured from the theme's palette."""
-    applied, decls = _theme_decls(css, theme)
+    applied, decls = _theme_decls(css, theme, theme_dirs)
     values = {}
     for key, chrome_var in CONTENT_MAP.items():
         values[key] = decls.get(chrome_var) or decls.get("--toolbar-color") or "#000000"
@@ -174,6 +266,9 @@ def main(argv=None) -> int:
                         help="path to the bundled stylesheet (default: ../themes/userChrome.css)")
     parser.add_argument("--output", default="-",
                         help="output path, or - for stdout")
+    parser.add_argument("--theme-dir", action="append", default=None,
+                        help="extra directory to search for <theme>/colors.toml (repeatable; "
+                             "searched before the default Omarchy theme dirs)")
     args = parser.parse_args(argv)
 
     source = pathlib.Path(args.source) if args.source else (
@@ -182,7 +277,8 @@ def main(argv=None) -> int:
         print("render-css: stylesheet not found: %s" % source, file=sys.stderr)
         return 1
 
-    rendered = KINDS[args.kind](source.read_text(), args.theme)
+    theme_dirs = tuple(pathlib.Path(d) for d in (args.theme_dir or [])) + DEFAULT_THEME_DIRS
+    rendered = KINDS[args.kind](source.read_text(), args.theme, theme_dirs)
     if args.output == "-":
         sys.stdout.write(rendered)
     else:

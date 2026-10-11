@@ -11,6 +11,7 @@ import importlib.machinery
 import importlib.util
 import pathlib
 import re
+import tempfile
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -152,6 +153,94 @@ class MainCase(unittest.TestCase):
     def test_main_reports_a_missing_stylesheet(self):
         rc = render_css.main(["nord", "--source", "/no/such/file.css", "--output", "/tmp/x"])
         self.assertEqual(rc, 1)
+
+
+class PaletteDerivationCase(unittest.TestCase):
+    """A user's own theme (or one added later) is derived from its colors.toml."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dirs = (pathlib.Path(self.tmp.name),)
+
+    def write_palette(self, theme, **kv):
+        d = self.dirs[0] / theme
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "colors.toml").write_text(
+            "\n".join('%s = "%s"' % (k, v) for k, v in kv.items()) + "\n")
+
+    def test_reads_a_palette_from_a_theme_dir(self):
+        self.write_palette("mine", background="#000000", foreground="#ffcc00")
+        pal = render_css.read_palette("mine", self.dirs)
+        self.assertEqual(pal["background"], "#000000")
+        self.assertEqual(pal["foreground"], "#ffcc00")
+
+    def test_no_palette_returns_none(self):
+        self.assertIsNone(render_css.read_palette("absent", self.dirs))
+        self.assertIsNone(render_css.read_palette("", self.dirs))
+
+    def test_a_palette_without_background_is_ignored(self):
+        self.write_palette("partial", foreground="#ffcc00")
+        self.assertIsNone(render_css.read_palette("partial", self.dirs))
+
+    def test_derived_block_maps_the_palette(self):
+        block = render_css.derived_block({
+            "mode": "dark", "background": "#101010", "foreground": "#e0e0e0",
+            "accent": "#00aaff", "selection": "#204060", "dark_background": "#080808",
+            "lighter_background": "#202020", "dark_foreground": "#808080",
+        })
+        self.assertIn("color-scheme: dark;", block)
+        self.assertIn("--toolbar-bgcolor: #101010;", block)
+        self.assertIn("--message-pane-background: #101010;", block)
+        self.assertIn("--selected-item-color: #00aaff;", block)
+        self.assertIn("--sidebar-background-color: #080808;", block)
+
+    def test_derived_block_defaults_missing_keys(self):
+        block = render_css.derived_block({"background": "#000000", "foreground": "#ffffff"})
+        self.assertIn("--toolbar-bgcolor: #000000;", block)
+        # accent falls back to the foreground; the backgrounds to the background
+        self.assertIn("--button-primary-bgcolor: #ffffff;", block)
+        self.assertIn("--tab-selected-bgcolor: #000000;", block)
+        self.assertIn("--sidebar-text-color: #000000;", block)
+
+    def test_light_mode_sets_a_light_scheme(self):
+        block = render_css.derived_block(
+            {"mode": "light", "background": "#ffffff", "foreground": "#000000"})
+        self.assertIn("color-scheme: light;", block)
+
+    def test_shade_darkens_but_keeps_the_hue_and_handles_junk(self):
+        self.assertEqual(render_css._shade("#ffffff", 0.5), "#808080")
+        # the default factor is a light touch (90% lightness), not a blackout
+        self.assertEqual(render_css._shade("#ffffff"), "#e6e6e6")
+        self.assertEqual(render_css._shade("nonsense"), "nonsense")
+
+    def test_render_derives_a_theme_with_no_curated_block(self):
+        self.write_palette("mine", mode="dark", background="#123456", foreground="#c0ffee")
+        body = first_root_body(render_css.render(SOURCE, "mine", self.dirs))
+        self.assertIn("applied theme = mine (derived from colors.toml)", body)
+        self.assertIn("--toolbar-bgcolor: #123456;", body)
+
+    def test_the_curated_block_wins_over_a_colors_toml(self):
+        # nord is hand-tuned; a colors.toml with the same name must not override it
+        self.write_palette("nord", background="#123456", foreground="#c0ffee")
+        body = first_root_body(render_css.render(SOURCE, "nord", self.dirs))
+        self.assertIn("applied theme = nord */", body)
+        self.assertNotIn("derived", body)
+        self.assertIn("--toolbar-bgcolor: #2e3440;", body)
+
+    def test_content_css_derives_the_theme_too(self):
+        self.write_palette("mine", background="#123456", foreground="#c0ffee", accent="#00ff00")
+        out = render_css.render_content(SOURCE, "mine", self.dirs)
+        self.assertIn("Applied theme: mine (derived from colors.toml)", out)
+        self.assertIn("--tb-bg: #123456;", out)
+
+    def test_main_accepts_a_theme_dir(self):
+        self.write_palette("mine", background="#123456", foreground="#c0ffee")
+        dest = self.dirs[0] / "out.css"
+        rc = render_css.main(["mine", "--source", str(REPO / "themes/userChrome.css"),
+                              "--theme-dir", str(self.dirs[0]), "--output", str(dest)])
+        self.assertEqual(rc, 0)
+        self.assertIn("--toolbar-bgcolor: #123456;", dest.read_text())
 
 
 if __name__ == "__main__":
