@@ -123,6 +123,53 @@ else
   bad "precedence: an explicit argument wins"
 fi
 
+# ── 7. no recorded theme: `omarchy theme current` supplies it ────────────────
+f="$work/f"; make_profile "$f"
+mkdir -p "$work/stub-omarchy"
+cat > "$work/stub-omarchy/omarchy" <<'EOF'
+#!/bin/bash
+if [[ $1 == theme && $2 == current ]]; then echo "Tokyo Night"; exit 0; fi
+exit 1
+EOF
+chmod +x "$work/stub-omarchy/omarchy"
+PATH="$work/stub-omarchy:$work/stub-stop:$PATH" XDG_CONFIG_HOME="$f" bash "$RELOAD" >/dev/null 2>&1
+assert_eq "fallback: exit status" 0 "$?"
+if grep -q 'applied theme = tokyo-night' \
+     "$f/thunderbird/abc.default-release/chrome/userChrome.css" 2>/dev/null; then
+  ok "fallback: uses the current Omarchy theme"
+else
+  bad "fallback: uses the current Omarchy theme"
+fi
+
+# ── 7b. a failing `omarchy theme current` must not abort (falls to catppuccin) ─
+g="$work/g"; make_profile "$g"
+cat > "$work/stub-omarchy/omarchy" <<'EOF'
+#!/bin/bash
+echo "boom" >&2
+exit 1
+EOF
+chmod +x "$work/stub-omarchy/omarchy"
+PATH="$work/stub-omarchy:$work/stub-stop:$PATH" XDG_CONFIG_HOME="$g" bash "$RELOAD" >/dev/null 2>&1
+assert_eq "failing theme current: exit status" 0 "$?"
+assert_eq "failing theme current: fell back to catppuccin" "catppuccin" \
+  "$(cat "$g/thunderbird/abc.default-release/chrome/omarchy-active-theme" 2>/dev/null)"
+
+# ── 8. a noisy pgrep must not leak onto the reload's stderr ──────────────────
+h="$work/h"; make_profile "$h"
+mkdir -p "$work/stub-noisy"
+cat > "$work/stub-noisy/pgrep" <<'EOF'
+#!/bin/bash
+echo "pgrep: noise" >&2
+exit 1
+EOF
+chmod +x "$work/stub-noisy/pgrep"
+PATH="$work/stub-noisy:$PATH" XDG_CONFIG_HOME="$h" bash "$RELOAD" "nord" >/dev/null 2>"$work/h.err"
+if [[ -s "$work/h.err" ]]; then
+  bad "noisy pgrep: stderr suppressed (got: $(cat "$work/h.err"))"
+else
+  ok "noisy pgrep: stderr suppressed"
+fi
+
 printf '\n'
 if (( fails == 0 )); then
   echo "test_reload.sh: all assertions passed"
