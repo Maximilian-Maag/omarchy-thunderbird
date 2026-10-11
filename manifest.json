@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "Maximilian-Maag.thunderbird",
   "name": "Thunderbird",
-  "version": "1.9.10",
+  "version": "1.9.11",
   "author": "Maximilian-Maag",
   "license": "MIT",
   "description": "Thunderbird as the default Omarchy mail client \u2014 all 22 stock themes (chrome and message body), privacy defaults, an unread-count bar widget and system-wide mailto registration.",

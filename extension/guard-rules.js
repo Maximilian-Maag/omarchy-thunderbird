@@ -23,7 +23,9 @@
       "support", "rest", "buzz", "loan", "quest", "cam", "surf", "bar",
     ],
     // Brand -> the domains that brand legitimately uses. A message claiming the brand
-    // from any other domain is impersonation.
+    // from any other domain is impersonation. A federated brand (its domains are issued
+    // per local institute and cannot be listed) carries `pattern` instead, matched
+    // against the registrable domain.
     brands: [
       { name: "paypal", domains: ["paypal.com", "paypal.me"] },
       { name: "amazon", domains: ["amazon.com", "amazon.de", "amazon.co.uk", "amazonaws.com"] },
@@ -32,8 +34,15 @@
       { name: "google", domains: ["google.com", "gmail.com", "googlemail.com"] },
       { name: "netflix", domains: ["netflix.com"] },
       { name: "dhl", domains: ["dhl.com", "dhl.de"] },
-      { name: "sparkasse", domains: ["sparkasse.de"] },
-      { name: "volksbank", domains: ["volksbank.de"] },
+      // Sparkassen are federated: each institute runs its own domain, so a fixed list
+      // cannot describe them — matching only on sparkasse.de flagged their real mail.
+      // Match the shape within .de (berliner-sparkasse.de, sparkasse-koelnbonn.de,
+      // kreissparkasse-x.de, ksk-x.de). A message claiming Sparkasse from a subdomain of
+      // someone else's domain, or from another TLD, matches neither and is still flagged.
+      { name: "sparkasse", domains: ["sparkasse.de"],
+        pattern: /sparkasse(-[a-z0-9-]+)?\.de$|^ksk-[a-z0-9-]+\.de$/ },
+      { name: "volksbank", domains: ["volksbank.de"],
+        pattern: /volksbank(-[a-z0-9-]+)?\.de$/ },
       { name: "postbank", domains: ["postbank.de"] },
       { name: "telekom", domains: ["telekom.de", "t-online.de"] },
     ],

@@ -2,6 +2,21 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.11] — 2026-10-11
+
+### Fixed
+- **The guard's brand check false-alarmed on real German bank mail.** Sparkassen and
+  Volksbanken are federated — each institute runs its own domain
+  (`berliner-sparkasse.de`, `sparkasse-koelnbonn.de`, `kreissparkasse-x.de`, `ksk-x.de`)
+  — so a fixed domain list cannot describe them, and any message whose display name said
+  "Sparkasse" from such a domain scored +40 and warned. Federated brands now carry a
+  shape, matched against the registrable domain, so the classic phish shapes — the brand
+  as a subdomain of someone else's domain (`sparkasse.evil.com`) or on another TLD — still
+  flag.
+
+### Changed
+- guard extension 1.1.2 — the bundle changed, so Thunderbird reloads it.
+
 ## [1.9.10] — 2026-10-11
 
 ### Fixed

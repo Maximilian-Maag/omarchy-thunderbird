@@ -171,6 +171,10 @@
       var ok = brand.domains.some(function (d) {
         return fromDomain === d || fromDomain.endsWith("." + d);
       });
+      // A federated brand carries a pattern (its domains are per-institute and cannot be
+      // enumerated). Test it against the registrable domain so the brand buried under
+      // someone else's domain ("sparkasse.evil.com") or on another TLD still fails it.
+      if (!ok && brand.pattern) ok = brand.pattern.test(registrable(fromDomain || ""));
       if (!ok) add(40, "brand-impersonation", brand.name + " from " + (fromDomain || "?"));
     });
 

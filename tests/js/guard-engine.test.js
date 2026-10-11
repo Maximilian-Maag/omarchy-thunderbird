@@ -141,6 +141,28 @@ test('brand impersonation from a lookalike domain warns', () => {
   assert.strictEqual(r.verdict, 'warn');
 });
 
+test('a federated brand is not flagged on its own institute domain', () => {
+  ['sparkasse-koelnbonn.de', 'berliner-sparkasse.de', 'kreissparkasse-koeln.de',
+   'ksk-steinfurt.de'].forEach(domain => {
+    const r = engine.analyzeSender({ from: `info@${domain}`, name: 'Sparkasse' });
+    assert.ok(!r.reasons.some(x => x.code === 'brand-impersonation'), domain);
+  });
+});
+
+test('a federated brand is still flagged off its own shape', () => {
+  // The brand buried under someone else's domain, or on another TLD, matches neither
+  // the domain list nor the .de shape.
+  ['sparkasse.evil.com', 'sparkasse-secure.com', 'sparkasse-verifizierung.net'].forEach(domain => {
+    const r = engine.analyzeSender({ from: `info@${domain}`, name: 'Sparkasse' });
+    assert.ok(r.reasons.some(x => x.code === 'brand-impersonation'), domain);
+  });
+});
+
+test('a legitimate Volksbank institute is not flagged', () => {
+  const r = engine.analyzeSender({ from: 'info@koelner-volksbank.de', name: 'Volksbank' });
+  assert.ok(!r.reasons.some(x => x.code === 'brand-impersonation'));
+});
+
 test('a display name that hides a different address is flagged', () => {
   const r = engine.analyzeSender({ from: 'bob@evil.com', name: 'support@yourbank.com' });
   assert.ok(r.reasons.some(x => x.code === 'name-hides-address'));
