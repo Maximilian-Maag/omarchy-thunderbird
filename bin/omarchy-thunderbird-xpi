@@ -2,9 +2,9 @@
 """Package the guard extension as an .xpi and install it into the profile.
 
 Thunderbird loads add-ons from ``<profile>/extensions/<gecko-id>.xpi``. With
-``xpinstall.signatures.required=false`` (set by the plugin's policies.json) an
-unsigned, self-built add-on loads from there, so a personal guard extension needs no
-AMO signing round-trip.
+``xpinstall.signatures.required=false`` — set in the profile's ``user.js``, since
+``xpinstall.*`` is outside the enterprise-policy allowlist — an unsigned, self-built
+add-on loads from there, so a personal guard extension needs no AMO signing.
 
     omarchy-thunderbird-xpi --build              # write build/omarchy-thunderbird-guard.xpi
     omarchy-thunderbird-xpi --install            # build + copy into the profile
@@ -56,6 +56,11 @@ def build_xpi(ext_dir: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
     for key in REQUIRED_MANIFEST_KEYS:
         if key not in manifest:
             raise ValueError("manifest.json is missing required key %r" % key)
+    # The bundled config is not optional: without it the extension loads but does
+    # nothing. Fail the build rather than ship an xpi that silently cannot sort.
+    for source, _arcname in EXTRA_FILES:
+        if not source.is_file():
+            raise ValueError("bundled config is missing: %s" % source)
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in files_to_pack(ext_dir):
@@ -63,10 +68,9 @@ def build_xpi(ext_dir: pathlib.Path, out: pathlib.Path) -> pathlib.Path:
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, path.read_bytes())
         for source, arcname in EXTRA_FILES:
-            if source.is_file():
-                info = zipfile.ZipInfo(arcname, FIXED_TIME)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                archive.writestr(info, source.read_bytes())
+            info = zipfile.ZipInfo(arcname, FIXED_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, source.read_bytes())
     return out
 
 

@@ -11,16 +11,27 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CAL = REPO / "bin/omarchy-thunderbird-calendar"
+
+# These tests are about converting the *true UTC instant* Thunderbird stores into
+# the local wall clock the user sees (and, for all-day/floating, the reverse). That
+# distinction vanishes when "local" is UTC: the assertions then hold no matter which
+# branch runs, so several mutants survive on a UTC CI runner while dying on a German
+# machine. Pin a non-UTC zone so the suite is deterministic and equally strict
+# everywhere.
+os.environ["TZ"] = "Europe/Berlin"
+time.tzset()
 
 
 def load_module(name, path):

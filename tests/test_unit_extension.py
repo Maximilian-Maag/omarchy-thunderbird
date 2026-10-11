@@ -165,6 +165,14 @@ class BuildCase(unittest.TestCase):
         xpi.build_xpi(EXT, nested)
         self.assertTrue(nested.is_file())
 
+    def test_missing_bundled_config_is_rejected(self):
+        # Without config/rules.json the extension loads but sorts nothing; the build must
+        # fail loudly rather than ship an xpi that silently does not work.
+        missing = (pathlib.Path(self._tmp.name) / "nope" / "rules.json", "config/rules.json")
+        with mock.patch.object(xpi, "EXTRA_FILES", [missing]):
+            with self.assertRaises(ValueError):
+                xpi.build_xpi(EXT, self.out)
+
     def test_missing_manifest_key_is_rejected(self):
         broken = pathlib.Path(self._tmp.name) / "ext"
         broken.mkdir()
