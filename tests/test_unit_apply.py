@@ -1,9 +1,11 @@
 """Unit tests for bin/omarchy-thunderbird-apply and the shipped config/ files.
 
-The applier turns config/*.json into the profile's user.js. Its parsing, validation
-and merge logic are pinned here, and the *shipped* config is checked too: every tag is
-well-formed and every configured pref actually differs from Thunderbird's built-in
-default (a pref equal to the default is dropped from prefs.js and does nothing).
+The applier turns config/*.json into the profile's user.js (settings/tags) and prefs.js
+(chat accounts, which must be registered with Thunderbird's account manager rather than
+pinned in user.js). Its parsing, validation and merge logic are pinned here, and the
+*shipped* config is checked too: every tag is well-formed and every configured pref
+actually differs from Thunderbird's built-in default (a pref equal to the default is
+dropped from prefs.js and does nothing).
 """
 
 import importlib.machinery
@@ -154,58 +156,194 @@ class ChatAccountsCase(unittest.TestCase):
     def test_a_valid_account_passes(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self.write(tmp, {"accounts": [
-                {"key": "libera", "name": "Libera", "protocol": "prpl-irc",
+                {"id": 1, "name": "Libera", "protocol": "prpl-irc",
                  "username": "bob@irc.libera.chat", "autoLogin": True, "autoJoin": "#x"}]})
             self.assertEqual(len(apply.load_chat_accounts(path)), 1)
 
-    def test_a_bad_key_is_rejected(self):
+    def test_a_non_integer_id_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = self.write(tmp, {"accounts": [{"key": "Bad Key", "name": "x", "protocol": "prpl-irc"}]})
+            path = self.write(tmp, {"accounts": [{"id": "libera", "name": "x", "protocol": "prpl-irc"}]})
             with self.assertRaises(ValueError):
                 apply.load_chat_accounts(path)
 
-    def test_a_duplicate_key_is_rejected(self):
+    def test_a_boolean_id_is_rejected(self):
+        # bool is an int subclass; it must still be refused.
         with tempfile.TemporaryDirectory() as tmp:
-            acct = {"key": "dup", "name": "x", "protocol": "prpl-irc"}
+            path = self.write(tmp, {"accounts": [{"id": True, "name": "x", "protocol": "prpl-irc"}]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_a_zero_id_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.write(tmp, {"accounts": [{"id": 0, "name": "x", "protocol": "prpl-irc"}]})
+            with self.assertRaises(ValueError):
+                apply.load_chat_accounts(path)
+
+    def test_a_duplicate_id_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            acct = {"id": 2, "name": "x", "protocol": "prpl-irc"}
             path = self.write(tmp, {"accounts": [acct, dict(acct)]})
             with self.assertRaises(ValueError):
                 apply.load_chat_accounts(path)
 
     def test_a_missing_name_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = self.write(tmp, {"accounts": [{"key": "x", "name": " ", "protocol": "prpl-irc"}]})
+            path = self.write(tmp, {"accounts": [{"id": 1, "name": " ", "protocol": "prpl-irc"}]})
             with self.assertRaises(ValueError):
                 apply.load_chat_accounts(path)
 
     def test_a_protocol_that_is_not_prpl_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = self.write(tmp, {"accounts": [{"key": "x", "name": "x", "protocol": "irc"}]})
+            path = self.write(tmp, {"accounts": [{"id": 1, "name": "x", "protocol": "irc"}]})
             with self.assertRaises(ValueError):
                 apply.load_chat_accounts(path)
 
     def test_a_non_boolean_autoLogin_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = self.write(tmp, {"accounts": [{"key": "x", "name": "x", "protocol": "prpl-irc", "autoLogin": "yes"}]})
+            path = self.write(tmp, {"accounts": [{"id": 1, "name": "x", "protocol": "prpl-irc", "autoLogin": "yes"}]})
             with self.assertRaises(ValueError):
                 apply.load_chat_accounts(path)
 
-    def test_account_prefs_use_the_messenger_account_namespace(self):
-        prefs = apply.account_prefs([
-            {"key": "libera", "name": "Libera", "protocol": "prpl-irc",
-             "username": "bob@irc.libera.chat", "autoLogin": True, "autoJoin": "#a,#b"},
-        ])
-        self.assertEqual(prefs["messenger.account.libera.name"], "Libera")
-        self.assertEqual(prefs["messenger.account.libera.prpl"], "prpl-irc")
-        self.assertIs(prefs["messenger.account.libera.autoLogin"], True)
-        self.assertEqual(prefs["messenger.account.libera.autoJoin"], "#a,#b")
-        # options live one level deeper
-        self.assertEqual(prefs["messenger.account.libera.options.username"], "bob@irc.libera.chat")
+
+class AccountManagerPrefsCase(unittest.TestCase):
+    def acct(self, **kw):
+        base = {"id": 1, "name": "Libera", "protocol": "prpl-irc"}
+        base.update(kw)
+        return base
+
+    def test_registers_the_account_with_the_manager(self):
+        prefs = apply.account_manager_prefs({}, [self.acct(
+            username="bob@irc.libera.chat", autoLogin=True, autoJoin="#a,#b")])
+        self.assertEqual(prefs["mail.accountmanager.accounts"], "account1")
+        self.assertEqual(prefs["mail.account.account1.server"], "server1")
+        self.assertEqual(prefs["mail.server.server1.type"], "im")
+        self.assertEqual(prefs["mail.server.server1.hostname"], "prpl-irc")
+        self.assertEqual(prefs["mail.server.server1.userName"], "Libera")
+        self.assertEqual(prefs["mail.server.server1.imAccount"], "account1")
+        self.assertEqual(prefs["messenger.account.account1.name"], "Libera")
+        self.assertEqual(prefs["messenger.account.account1.prpl"], "prpl-irc")
+        self.assertIs(prefs["messenger.account.account1.autoLogin"], True)
+        self.assertEqual(prefs["messenger.account.account1.autoJoin"], "#a,#b")
+        self.assertEqual(prefs["messenger.account.account1.options.username"], "bob@irc.libera.chat")
+
+    def test_existing_accounts_and_server_numbers_are_preserved(self):
+        existing = {"mail.accountmanager.accounts": '"account1,account2"',
+                    "mail.account.account1.server": '"server2"',
+                    "mail.server.server2.type": '"imap"'}
+        prefs = apply.account_manager_prefs(existing, [self.acct(id=3)])
+        self.assertEqual(prefs["mail.accountmanager.accounts"], "account1,account2,account3")
+        self.assertEqual(prefs["mail.account.account3.server"], "server1")  # server1 free, server2 taken
+
+    def test_an_existing_chat_account_reuses_its_server(self):
+        existing = {"mail.accountmanager.accounts": '"account1"',
+                    "mail.account.account1.server": '"server5"',
+                    "mail.server.server5.type": '"im"'}
+        prefs = apply.account_manager_prefs(existing, [self.acct(id=1)])
+        self.assertNotIn("mail.account.account1.server", prefs)  # reused, not rewritten
+        self.assertEqual(prefs["mail.server.server5.imAccount"], "account1")
+        self.assertEqual(prefs["mail.accountmanager.accounts"], "account1")
+
+    def test_an_id_clashing_with_a_real_account_is_refused(self):
+        existing = {"mail.accountmanager.accounts": '"account1"',
+                    "mail.account.account1.server": '"server1"',
+                    "mail.server.server1.type": '"imap"'}
+        with self.assertRaises(ValueError):
+            apply.account_manager_prefs(existing, [self.acct(id=1)])
+
+    def test_no_accounts_means_no_updates(self):
+        self.assertEqual(apply.account_manager_prefs({}, []), {})
 
     def test_optional_fields_are_omitted_when_absent(self):
-        prefs = apply.account_prefs([{"key": "x", "name": "X", "protocol": "prpl-irc"}])
-        self.assertIs(prefs["messenger.account.x.autoLogin"], False)
-        self.assertNotIn("messenger.account.x.autoJoin", prefs)
-        self.assertNotIn("messenger.account.x.options.username", prefs)
+        prefs = apply.account_manager_prefs({}, [self.acct()])
+        self.assertIs(prefs["messenger.account.account1.autoLogin"], False)
+        self.assertNotIn("messenger.account.account1.autoJoin", prefs)
+        self.assertNotIn("messenger.account.account1.options.username", prefs)
+
+    def test_unquote_handles_quoted_bare_and_escapes(self):
+        self.assertEqual(apply._unquote('"hi"'), "hi")
+        self.assertEqual(apply._unquote("bare"), "bare")
+        self.assertEqual(apply._unquote('"a\\"b"'), 'a"b')
+        self.assertEqual(apply._unquote('"a\\\\b"'), "a\\b")
+
+    def test_next_free_server_skips_used_numbers(self):
+        self.assertEqual(apply._next_free_server(set()), "server1")
+        self.assertEqual(apply._next_free_server({"server1", "server2"}), "server3")
+
+
+class PrefsFileCase(unittest.TestCase):
+    def test_read_prefs_captures_keys_and_raw_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = pathlib.Path(tmp) / "prefs.js"
+            p.write_text('// c\nuser_pref("a.b", "x");\nuser_pref("n", 3);\n')
+            self.assertEqual(apply.read_prefs(p), {"a.b": '"x"', "n": "3"})
+
+    def test_read_prefs_of_a_missing_file_is_empty(self):
+        self.assertEqual(apply.read_prefs(pathlib.Path("/nonexistent/prefs.js")), {})
+
+    def test_upsert_replaces_existing_and_appends_new(self):
+        out = apply.upsert_pref_lines('// keep\nuser_pref("a", 1);\n', {"a": 2, "b": "z"})
+        self.assertIn("// keep", out)
+        self.assertIn('user_pref("a", 2);', out)
+        self.assertIn('user_pref("b", "z");', out)
+        self.assertNotIn('user_pref("a", 1);', out)
+
+    def test_upsert_is_idempotent(self):
+        once = apply.upsert_pref_lines('user_pref("a", 1);\n', {"a": 1})
+        self.assertEqual(once, apply.upsert_pref_lines(once, {"a": 1}))
+
+    def test_upsert_leaves_unmanaged_lines_alone(self):
+        out = apply.upsert_pref_lines('user_pref("keep.me", "yes");\n', {"new.key": 1})
+        self.assertIn('user_pref("keep.me", "yes");', out)
+        self.assertIn('user_pref("new.key", 1);', out)
+
+
+class ProvisionCase(unittest.TestCase):
+    def test_provision_writes_the_registration_to_prefs_js(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = pathlib.Path(tmp)
+            (profile / "prefs.js").write_text('user_pref("mail.accountmanager.accounts", "");\n')
+            n = apply.provision_accounts(profile, [{"id": 1, "name": "Libera", "protocol": "prpl-irc"}])
+            self.assertEqual(n, 1)
+            text = (profile / "prefs.js").read_text()
+            self.assertIn('user_pref("mail.server.server1.type", "im");', text)
+            self.assertIn('user_pref("mail.accountmanager.accounts", "account1");', text)
+            # never user.js
+            self.assertFalse((profile / "user.js").exists())
+
+    def test_provision_with_no_accounts_is_a_noop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = pathlib.Path(tmp)
+            self.assertEqual(apply.provision_accounts(profile, []), 0)
+            self.assertFalse((profile / "prefs.js").exists())
+
+    def test_provision_refuses_while_thunderbird_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = pathlib.Path(tmp)
+            (profile / "prefs.js").write_text("")
+            with mock.patch.object(apply, "thunderbird_running", lambda: True):
+                with self.assertRaises(apply.ThunderbirdRunning):
+                    apply.provision_accounts(profile, [{"id": 1, "name": "x", "protocol": "prpl-irc"}])
+
+    def test_thunderbird_running_handles_a_missing_pgrep(self):
+        with mock.patch.object(apply.subprocess, "run", side_effect=OSError):
+            self.assertFalse(apply.thunderbird_running())
+
+    def test_thunderbird_running_reads_the_returncode(self):
+        with mock.patch.object(apply.subprocess, "run", lambda cmd, **kw: mock.Mock(returncode=0)):
+            self.assertTrue(apply.thunderbird_running())
+        with mock.patch.object(apply.subprocess, "run", lambda cmd, **kw: mock.Mock(returncode=1)):
+            self.assertFalse(apply.thunderbird_running())
+
+    def test_thunderbird_running_captures_output(self):
+        record = {}
+
+        def run(cmd, **kw):
+            record.update(kw)
+            return mock.Mock(returncode=1)
+
+        with mock.patch.object(apply.subprocess, "run", run):
+            apply.thunderbird_running()
+        self.assertIs(record["capture_output"], True)
 
 
 class LiteralCase(unittest.TestCase):

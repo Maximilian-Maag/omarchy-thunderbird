@@ -33,7 +33,8 @@ fi
 # ── 3. Apply declarative prefs + tags (config/settings.json, config/tags.json) ─
 if [[ -n "$PROFILE" ]]; then
   "$PLUGIN_DIR/bin/omarchy-thunderbird-apply" --profile "$PROFILE"
-  echo "  Applied user.js preferences and tags."
+  echo "  Applied user.js preferences, tags and chat accounts (chat is skipped, with a"
+  echo "  warning, if Thunderbird is open — close it and re-run to register them)."
 fi
 
 # ── 4. Set up userChrome.css theming ──────────────────────────────────────────

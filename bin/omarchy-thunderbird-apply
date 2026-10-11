@@ -6,13 +6,18 @@ test. This tool turns the files under ``config/`` into the profile's ``user.js``
 
 * ``config/settings.json`` — plain preference overrides (machine/user specific)
 * ``config/tags.json``     — tag definitions -> ``mailnews.tags.<key>.{tag,color}``
-* ``config/chat.json``     — chat accounts -> ``messenger.account.<key>.*`` (optional)
+* ``config/chat.json``     — chat accounts -> the account manager (optional)
 
-Chat accounts are rendered into the ``messenger.account.<key>.*`` namespace, which is
-where Thunderbird keeps them (``imAccounts.sys.mjs``: ``getBranch("messenger.account."
-+ key + ".")``). Account *options* such as the nickname live one level deeper under
-``options.`` — the account setters prefix every option with it — so a nickname is
-written as ``messenger.account.<key>.options.username``.
+Chat accounts are *registered*, not just configured: Thunderbird enumerates them from
+``MailServices.accounts`` (``imAccounts.sys.mjs`` ``initAccounts()``), so an account only
+exists once ``mail.accountmanager.accounts`` lists it and a ``type=im`` incoming server
+with ``imAccount = account<N>`` points at it — writing the ``messenger.account.<key>.*``
+prefs alone creates nothing. ``apply`` therefore writes those account-manager prefs, plus
+the account's ``messenger.account.account<N>.*`` config (a nickname is
+``...options.username``), into the profile's ``prefs.js``. It is ``prefs.js`` and not
+``user.js`` on purpose: ``user.js`` is re-applied every startup and would override
+Thunderbird's own account management, silently dropping any account added later in the
+UI. ``apply`` refuses to write while Thunderbird is running.
 
 The shipped ``profile/user.js`` is the base; config overrides it (later ``user_pref``
 calls win), and any pref lines a user added by hand to their own ``user.js`` are
@@ -34,9 +39,14 @@ import sys
 
 PLUGIN_DIR = pathlib.Path(__file__).resolve().parent.parent
 TAG_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
-ACCOUNT_KEY = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 PREF_KEY = re.compile(r'user_pref\(\s*"([^"]+)"')
+# A whole prefs.js/user.js line, capturing the key and the raw JS value (for prefs.js).
+PREF_LINE = re.compile(r'^\s*user_pref\(\s*"([^"]+)"\s*,\s*(.*?)\s*\);\s*$')
+
+
+class ThunderbirdRunning(Exception):
+    """Chat accounts were declared but Thunderbird is up, so prefs.js cannot be written."""
 
 
 def load_tags(path: pathlib.Path):
@@ -88,6 +98,10 @@ def load_chat_accounts(path: pathlib.Path):
     """Validate and return the chat accounts from a chat.json file.
 
     A missing file is not an error (chat is optional): it means "no accounts to add".
+    Each account carries an integer ``id`` — the Thunderbird account number. It cannot be
+    an arbitrary name: Thunderbird keys chat accounts by ``account<N>`` (``imAccounts
+    .sys.mjs``: ``numericId = parseInt(key.substr("account".length))``) and enumerates
+    them from the account manager, so the id decides which ``account<N>`` is created.
     """
     if not path.is_file():
         return []
@@ -97,44 +111,159 @@ def load_chat_accounts(path: pathlib.Path):
         raise ValueError("%s: 'accounts' must be a list" % path)
     seen = set()
     for account in accounts:
-        key = str(account.get("key", ""))
-        if not ACCOUNT_KEY.match(key):
-            raise ValueError("%s: bad account key %r (want [a-z0-9][a-z0-9-]*)" % (path, key))
-        if key in seen:
-            raise ValueError("%s: duplicate account key %r" % (path, key))
-        seen.add(key)
+        aid = account.get("id")
+        if not isinstance(aid, int) or isinstance(aid, bool) or aid < 1:
+            raise ValueError("%s: account 'id' must be a positive integer (got %r)"
+                             % (path, aid))
+        if aid in seen:
+            raise ValueError("%s: duplicate account id %r" % (path, aid))
+        seen.add(aid)
         if not str(account.get("name", "")).strip():
-            raise ValueError("%s: account %r has no name" % (path, key))
+            raise ValueError("%s: account %r has no name" % (path, aid))
         protocol = str(account.get("protocol", ""))
         if not protocol.startswith("prpl-"):
             raise ValueError("%s: account %r protocol %r must start with 'prpl-'"
-                             % (path, key, protocol))
+                             % (path, aid, protocol))
         if "autoLogin" in account and not isinstance(account["autoLogin"], bool):
-            raise ValueError("%s: account %r autoLogin must be a boolean" % (path, key))
+            raise ValueError("%s: account %r autoLogin must be a boolean" % (path, aid))
         for optional in ("username", "autoJoin"):
             if optional in account and not isinstance(account[optional], str):
-                raise ValueError("%s: account %r %s must be a string" % (path, key, optional))
+                raise ValueError("%s: account %r %s must be a string" % (path, aid, optional))
     return accounts
 
 
-def account_prefs(accounts):
-    """{pref: value} for validated chat accounts.
+def account_manager_prefs(existing, accounts):
+    """{pref: value} registering each declared chat account with Thunderbird's account
+    manager, or {} when there is nothing to add.
 
-    Only the fields needed to make an account work are written; protocol defaults fill
-    the rest, so nothing unverified is set. IRC needs no password (``passwordOptional``),
-    which is why a credential-free account can be declared here at all.
+    Thunderbird enumerates chat accounts from ``MailServices.accounts`` (``imAccounts
+    .sys.mjs`` ``initAccounts()``): a chat account only exists once
+    ``mail.accountmanager.accounts`` lists it and a ``type=im`` incoming server with
+    ``imAccount = account<N>`` points at it. Writing the ``messenger.account.<key>.*``
+    prefs alone creates nothing.
+
+    ``existing`` is the profile's current ``prefs.js`` (key -> raw JS value). It supplies
+    the accounts already registered — preserved so they are never dropped — and the server
+    numbers in use, so a new server id cannot collide. The account/server ids are reused
+    when the account already exists, so a re-run is idempotent.
     """
-    prefs = {}
+    listed = [a for a in _unquote(existing.get("mail.accountmanager.accounts", '""')).split(",") if a]
+    used_servers = set()
+    for key in existing:
+        match = re.match(r"^mail\.server\.(server\d+)\.", key)
+        if match:
+            used_servers.add(match.group(1))
+
+    updates = {}
+    wanted = []
     for account in accounts:
-        base = "messenger.account.%s." % account["key"]
-        prefs[base + "name"] = str(account["name"])
-        prefs[base + "prpl"] = str(account["protocol"])
-        prefs[base + "autoLogin"] = bool(account.get("autoLogin", False))
+        akey = "account%d" % account["id"]
+        server = _unquote(existing.get("mail.account.%s.server" % akey, '""'))
+        if server:
+            kind = _unquote(existing.get("mail.server.%s.type" % server, '""'))
+            if kind != "im":
+                raise ValueError(
+                    "account %s is already a %r account; pick another id" % (akey, kind or "?"))
+        else:
+            server = _next_free_server(used_servers)
+            used_servers.add(server)
+            updates["mail.account.%s.server" % akey] = server
+        updates["mail.server.%s.type" % server] = "im"
+        updates["mail.server.%s.hostname" % server] = str(account["protocol"])
+        updates["mail.server.%s.userName" % server] = str(account["name"])
+        updates["mail.server.%s.imAccount" % server] = akey
+        base = "messenger.account.%s." % akey
+        updates[base + "name"] = str(account["name"])
+        updates[base + "prpl"] = str(account["protocol"])
+        updates[base + "autoLogin"] = bool(account.get("autoLogin", False))
         if account.get("autoJoin"):
-            prefs[base + "autoJoin"] = str(account["autoJoin"])
+            updates[base + "autoJoin"] = str(account["autoJoin"])
         if account.get("username"):
-            prefs[base + "options.username"] = str(account["username"])
+            updates[base + "options.username"] = str(account["username"])
+        wanted.append(akey)
+
+    if wanted:
+        updates["mail.accountmanager.accounts"] = ",".join(
+            listed + [a for a in wanted if a not in listed])
+    return updates
+
+
+def _unquote(raw):
+    """A raw prefs.js JS value as a plain string (string literals only)."""
+    raw = str(raw).strip()
+    if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+        return raw[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return raw
+
+
+def _next_free_server(used):
+    """The first 'server<N>' not already in `used`."""
+    n = 1
+    while ("server%d" % n) in used:
+        n += 1
+    return "server%d" % n
+
+
+def read_prefs(path: pathlib.Path):
+    """{key: raw JS value} from a prefs.js body (last write wins)."""
+    prefs = {}
+    if path.is_file():
+        for line in path.read_text(errors="replace").splitlines():
+            match = PREF_LINE.match(line)
+            if match:
+                prefs[match.group(1)] = match.group(2)
     return prefs
+
+
+def upsert_pref_lines(text: str, updates) -> str:
+    """prefs.js text with `updates` applied: existing lines replaced, new ones appended.
+
+    Only whole ``user_pref("key", ...);`` lines are touched, so comments and any foreign
+    content are preserved and a re-run does not accumulate duplicates.
+    """
+    remaining = dict(updates)
+    out = []
+    for line in text.splitlines():
+        match = PREF_LINE.match(line)
+        if match and match.group(1) in remaining:
+            out.append('user_pref("%s", %s);' % (match.group(1), literal(remaining.pop(match.group(1)))))
+        else:
+            out.append(line)
+    for key, value in remaining.items():
+        out.append('user_pref("%s", %s);' % (key, literal(value)))
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def thunderbird_running():
+    """True when a Thunderbird process is up (it would overwrite prefs.js on exit)."""
+    try:
+        result = subprocess.run(["pgrep", "-x", "thunderbird"], capture_output=True)
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+def provision_accounts(profile: pathlib.Path, accounts):
+    """Write the account-manager registration for `accounts` into the profile's prefs.js.
+
+    Returns the number of accounts declared. prefs.js — not user.js — is deliberate:
+    user.js is re-applied every startup and would override Thunderbird's own account
+    management, silently dropping any account the user adds later in the UI. Refuses to
+    write while Thunderbird is running, since it would discard the change on exit.
+    """
+    if not accounts:
+        return 0
+    prefs_path = profile / "prefs.js"
+    updates = account_manager_prefs(read_prefs(prefs_path), accounts)
+    if not updates:
+        return 0
+    if thunderbird_running():
+        raise ThunderbirdRunning(
+            "Thunderbird is running; close it so the chat accounts can be written to "
+            "prefs.js (it would overwrite them on exit)")
+    text = prefs_path.read_text(errors="replace") if prefs_path.is_file() else ""
+    write_atomic(prefs_path, upsert_pref_lines(text, updates))
+    return len(accounts)
 
 
 def literal(value) -> str:
@@ -234,7 +363,6 @@ def main(argv=None) -> int:
     config_prefs = {}
     config_prefs.update(tags_to_prefs(tags))
     config_prefs.update(settings)
-    config_prefs.update(account_prefs(accounts))
 
     profile = resolve_profile(args.profile)
     if profile is None or not profile.is_dir():
@@ -250,10 +378,26 @@ def main(argv=None) -> int:
     rendered = build_userjs(base, config_prefs, existing)
     if args.dry_run:
         sys.stdout.write(rendered)
-    else:
-        write_atomic(target, rendered)
-        print("omarchy-thunderbird: applied %d tag(s), %d setting(s) and %d chat account(s) to %s"
-              % (len(tags), len(settings), len(accounts), target))
+        if accounts:
+            sys.stdout.write("// chat accounts (written to prefs.js, not user.js): %s\n"
+                             % ", ".join("account%d" % a["id"] for a in accounts))
+        return 0
+
+    write_atomic(target, rendered)
+    try:
+        provisioned = provision_accounts(profile, accounts)
+    except ThunderbirdRunning as exc:
+        # Not a config error: the prefs were applied, only the account registration was
+        # skipped. Warn loudly but succeed, so an installer under `set -e` does not abort.
+        print("omarchy-thunderbird-apply: %s" % exc, file=sys.stderr)
+        print("omarchy-thunderbird: applied %d tag(s) and %d setting(s) to %s; "
+              "chat accounts NOT applied" % (len(tags), len(settings), target))
+        return 0
+    except (OSError, ValueError) as exc:
+        print("omarchy-thunderbird-apply: %s" % exc, file=sys.stderr)
+        return 1
+    print("omarchy-thunderbird: applied %d tag(s), %d setting(s) and %d chat account(s) to %s"
+          % (len(tags), len(settings), provisioned, target))
     return 0
 
 

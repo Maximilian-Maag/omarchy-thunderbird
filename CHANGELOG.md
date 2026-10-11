@@ -2,21 +2,31 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.3] — 2026-10-11
+
+### Added
+- **Chat accounts are now actually provisioned.** `config/chat.json` declares each
+  account by its Thunderbird account number (`id`); `omarchy-thunderbird-apply` registers
+  it with Thunderbird's account manager — `mail.accountmanager.accounts`, a `type=im`
+  incoming server with `imAccount = account<N>`, and the account's
+  `messenger.account.account<N>.*` config — after which Thunderbird creates the account.
+  Those prefs go into the profile's `prefs.js`, not `user.js`, on purpose: `user.js` is
+  re-applied every startup and would override Thunderbird's own account management,
+  silently dropping any account added later in the UI. `apply` refuses to write while
+  Thunderbird is running. Verified end to end against Thunderbird 155: with the
+  registration `blist.sqlite.accounts` gains the account, and with the
+  `messenger.account.*` prefs alone it stays empty. Only credential-free accounts (IRC)
+  can be provisioned.
+
 ## [1.9.2] — 2026-10-11
 
 ### Changed
-- **Corrected the chat-accounts claim.** 1.9.0 described `config/chat.json` as
-  provisioning chat accounts; it does not, and cannot safely. Thunderbird enumerates
-  chat accounts from its account manager (`imAccounts.sys.mjs` `initAccounts()` reads
-  `MailServices.accounts`), so a chat account is a *MailServices* account whose incoming
+- **Documented why the chat prefs alone do nothing.** Thunderbird enumerates chat accounts
+  from its account manager (`imAccounts.sys.mjs` `initAccounts()` reads
+  `MailServices.accounts`): a chat account is a *MailServices* account whose incoming
   server is type `im` with `imAccount = account<N>`. Writing the `messenger.account.<key>`.*
   prefs alone creates nothing — verified against Thunderbird 155, where
-  `blist.sqlite.accounts` stays empty. Registering the account needs
-  `mail.accountmanager.accounts` pinned in `user.js`, which overrides Thunderbird's own
-  account management and would drop any account added later in the UI, so the plugin
-  deliberately does not do it. A chat account (credential-free IRC included) still has
-  to be added once in Thunderbird's Chat tab; the README and `config/chat.json` now say
-  so.
+  `blist.sqlite.accounts` stays empty. 1.9.3 registers the account properly.
 
 ## [1.9.1] — 2026-10-11
 
