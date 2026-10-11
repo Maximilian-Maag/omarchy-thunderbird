@@ -2,6 +2,24 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.7.0] — 2026-10-11
+
+### Fixed
+- **A rescheduled occurrence of a recurring event showed twice.** Moving one instance
+  of a series stores it as a *detached exception* — a second `cal_events` row sharing
+  the master's `id` with a non-null `recurrence_id` (the original slot) and its own
+  `event_start` (the new time), which is exactly how Thunderbird queries it
+  (`WHERE id = :id AND cal_id = :cal_id AND recurrence_id IS NOT NULL`). The calendar
+  backend now emits the exception at its new time and suppresses the master's original
+  slot. It also refuses to expand an exception as its own series — `cal_recurrence` is
+  keyed by the shared id, so without that guard an exception would inherit the master's
+  rule and fan out.
+
+### Testing
+- Unit cases for the moved-occurrence path: the original slot is suppressed, the new
+  time is used, the exception inherits no rule, and a lone exception without a resident
+  master still shows. `bin/omarchy-thunderbird-calendar` remains the mutation target.
+
 ## [1.6.0] — 2026-10-11
 
 ### Fixed

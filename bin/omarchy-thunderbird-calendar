@@ -9,7 +9,10 @@ so a raw value of ``1700000000000000`` is 1700000000 seconds.
 Recurring events store their RRULE in ``cal_recurrence.icalString`` (keyed by
 ``item_id``); those are expanded here rather than shown as their master date, because a
 weekly meeting whose master is three months old would otherwise look like a stale past
-event.
+event. A single occurrence you reschedule is a *detached exception*: a second
+``cal_events`` row sharing the master's ``id`` with a non-null ``recurrence_id`` (the
+original slot) and its own ``event_start`` (the new time). Those are emitted at the new
+time and suppress the master's slot, so a moved meeting does not appear twice.
 
     omarchy-thunderbird-calendar               # upcoming events, human readable
     omarchy-thunderbird-calendar --days 1      # just today
@@ -216,7 +219,7 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
         conn = sqlite3.connect(str(staged))
         try:
             rows = conn.execute(
-                "SELECT id, cal_id, title, event_start, event_end, ical_status "
+                "SELECT id, cal_id, title, event_start, event_end, ical_status, recurrence_id "
                 "FROM cal_events").fetchall()
             rules = {}
             try:
@@ -229,19 +232,39 @@ def load_events(db_path: pathlib.Path, workdir: pathlib.Path):
             conn.close()
     except sqlite3.Error:
         return []
-    for eid, cal_id, title, start, end, status in rows:
+
+    masters = {}
+    exceptions = []
+    for eid, cal_id, title, start, end, status, recurrence_id in rows:
         if start is None:
             continue
-        events.append({
+        event = {
             "id": eid,
             "calendar": cal_id,
             "title": title or "(no title)",
             "start_usecs": int(start),
             "end_usecs": int(end) if end is not None else int(start),
             "status": status or "",
-            "rule": rules.get(eid),
-        })
-    return events
+        }
+        if recurrence_id:
+            # A detached exception: it carries the master's id and the *original*
+            # occurrence start, while its own event_start is the new time.
+            event["override_of"] = int(recurrence_id)
+            event["rule"] = None
+            exceptions.append(event)
+        else:
+            event["rule"] = rules.get(eid)
+            masters[(cal_id, eid)] = event
+
+    # Tell each master which of its occurrence slots an exception has taken over.
+    for event in masters.values():
+        event["exceptions"] = set()
+    for event in exceptions:
+        master = masters.get((event["calendar"], event["id"]))
+        if master is not None:
+            master["exceptions"].add(event["override_of"] // USECS_PER_SECOND)
+
+    return list(masters.values()) + exceptions
 
 
 def scan_profile(profile: pathlib.Path):
@@ -261,6 +284,10 @@ def _occurrences_of(event, horizon, limit=MAX_OCCURRENCES):
     """Concrete (start, end) datetimes for an event, expanding recurrence if any."""
     master_start = to_datetime(event["start_usecs"])
     duration = to_datetime(event["end_usecs"]) - master_start
+    if event.get("override_of"):
+        # A detached exception is a single event at its own (new) time: expanding it
+        # would resurrect the whole series.
+        return [(master_start, master_start + duration)]
     rule = event.get("rule")
     if not rule:
         return [(master_start, master_start + duration)]
@@ -268,6 +295,11 @@ def _occurrences_of(event, horizon, limit=MAX_OCCURRENCES):
     if not starts:
         # Unsupported rule: fall back to the master occurrence rather than hiding it.
         return [(master_start, master_start + duration)]
+    # Drop the slots a detached exception has taken over; the exception itself is a
+    # separate event in the list and is emitted at its new time.
+    taken = event.get("exceptions") or set()
+    if taken:
+        starts = [s for s in starts if int(s.timestamp()) not in taken]
     return [(s, s + duration) for s in starts]
 
 

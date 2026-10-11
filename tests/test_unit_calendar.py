@@ -38,11 +38,16 @@ cal = load_module("tb_cal", CAL)
 
 
 def make_db(path, events, recurrences=()):
+    """Build a calendar store. Event rows are (id, cal_id, title, start, end, status)
+    with an optional 7th element, the recurrence_id of a detached exception."""
     conn = sqlite3.connect(str(path))
     conn.execute("CREATE TABLE cal_events (id TEXT, cal_id TEXT, title TEXT, "
-                 "event_start INTEGER, event_end INTEGER, ical_status TEXT)")
+                 "event_start INTEGER, event_end INTEGER, ical_status TEXT, "
+                 "recurrence_id INTEGER)")
     conn.execute("CREATE TABLE cal_recurrence (item_id TEXT, cal_id TEXT, icalString TEXT)")
-    conn.executemany("INSERT INTO cal_events VALUES (?,?,?,?,?,?)", events)
+    for row in events:
+        row = tuple(row) + (None,) * (7 - len(row))
+        conn.execute("INSERT INTO cal_events VALUES (?,?,?,?,?,?,?)", row)
     conn.executemany("INSERT INTO cal_recurrence VALUES (?,?,?)",
                      [(item, "cal", ical) for item, ical in recurrences])
     conn.commit()
@@ -257,6 +262,65 @@ class RecurrenceCase(unittest.TestCase):
     def test_a_missing_rule_is_none_and_one_occurrence_is_returned(self):
         self.assertEqual(cal.expand_occurrences(self.monday, None, self.monday + datetime.timedelta(days=1)),
                          [self.monday])
+
+
+class DetachedExceptionCase(unittest.TestCase):
+    """A rescheduled single occurrence must move, not duplicate."""
+
+    def setUp(self):
+        # Master weekly series whose NEXT occurrence is two hours from now.
+        self.next_occ = datetime.datetime.now() + datetime.timedelta(hours=2)
+        self.master = self.next_occ - datetime.timedelta(days=7)
+
+    def build(self, moved_hours=24):
+        moved = self.next_occ + datetime.timedelta(hours=moved_hours)
+        events = [
+            ("r1", "cal", "Standup", usecs(self.master),
+             usecs(self.master + datetime.timedelta(minutes=30)), "CONFIRMED"),
+            # exception: same id, recurrence_id = original slot, own start = new time
+            ("r1", "cal", "Standup (moved)", usecs(moved),
+             usecs(moved + datetime.timedelta(minutes=30)), "CONFIRMED", usecs(self.next_occ)),
+        ]
+        return events, moved
+
+    def test_the_moved_occurrence_replaces_the_original_slot(self):
+        events, moved = self.build()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, events, recurrences=[("r1", "BEGIN:VEVENT\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT")])
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        occ = cal.upcoming(loaded, days=7)
+        self.assertEqual(len(occ), 1, [o["title"] for o in occ])
+        self.assertEqual(datetime.datetime.fromisoformat(occ[0]["start"]),
+                         moved.replace(second=0, microsecond=0))
+
+    def test_the_exception_is_not_expanded_as_its_own_series(self):
+        # cal_recurrence is keyed by the shared id, so without the override guard the
+        # exception row would inherit the master's weekly rule and fan out.
+        events, _ = self.build()
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, events, recurrences=[("r1", "BEGIN:VEVENT\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT")])
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        exception = [e for e in loaded if e.get("override_of")]
+        self.assertEqual(len(exception), 1)
+        self.assertIsNone(exception[0]["rule"])
+        self.assertLessEqual(len(cal.upcoming(loaded, days=7)), 2)
+
+    def test_a_lone_exception_without_a_master_still_shows(self):
+        moved = datetime.datetime.now() + datetime.timedelta(hours=3)
+        events = [("gone", "cal", "Orphan", usecs(moved),
+                   usecs(moved + datetime.timedelta(minutes=30)), "CONFIRMED",
+                   usecs(moved - datetime.timedelta(days=7)))]
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pathlib.Path(tmp) / "local.sqlite"
+            make_db(db, events)
+            with tempfile.TemporaryDirectory() as work:
+                loaded = cal.load_events(db, pathlib.Path(work))
+        occ = cal.upcoming(loaded, days=7)
+        self.assertEqual([o["title"] for o in occ], ["Orphan"])
 
 
 class RecurrenceBoundaryCase(unittest.TestCase):
