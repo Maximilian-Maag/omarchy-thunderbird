@@ -231,11 +231,12 @@ of day), so neither is shifted by the local offset. Supported RRULE subset: FREQ
 (DAILY/WEEKLY/MONTHLY/YEARLY), INTERVAL, COUNT, UNTIL, BYDAY, BYMONTHDAY; cancelled
 occurrences (EXDATE) are excluded and extra ones (RDATE) added, and a UTC UNTIL/EXDATE
 is converted to local time before comparison; anything else falls back to the master
-occurrence. The chat backend reports accounts stored under `messenger.account.<key>.*`
-— a credential-free account (IRC) can be declared in `config/chat.json`, but a protocol
-that needs a password (Matrix, XMPP) still has to be added in Thunderbird's own Chat
-tab, which has no command-line flag (unlike `-mail`, `-calendar`, `-addressbook`,
-`-compose`).
+occurrence. The chat backend reports accounts stored under `messenger.account.<key>.*`.
+Thunderbird enumerates chat accounts from its account manager, so a chat account
+(credential-free IRC included) still has to be added once in Thunderbird's own Chat tab
+— writing prefs alone does not create one, and `config/chat.json` documents the accounts
+you intend to add rather than provisioning them. The Chat tab has no command-line flag
+(unlike `-mail`, `-calendar`, `-addressbook`, `-compose`).
 
 ## Testing
 

@@ -2,6 +2,22 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.2] — 2026-10-11
+
+### Changed
+- **Corrected the chat-accounts claim.** 1.9.0 described `config/chat.json` as
+  provisioning chat accounts; it does not, and cannot safely. Thunderbird enumerates
+  chat accounts from its account manager (`imAccounts.sys.mjs` `initAccounts()` reads
+  `MailServices.accounts`), so a chat account is a *MailServices* account whose incoming
+  server is type `im` with `imAccount = account<N>`. Writing the `messenger.account.<key>`.*
+  prefs alone creates nothing — verified against Thunderbird 155, where
+  `blist.sqlite.accounts` stays empty. Registering the account needs
+  `mail.accountmanager.accounts` pinned in `user.js`, which overrides Thunderbird's own
+  account management and would drop any account added later in the UI, so the plugin
+  deliberately does not do it. A chat account (credential-free IRC included) still has
+  to be added once in Thunderbird's Chat tab; the README and `config/chat.json` now say
+  so.
+
 ## [1.9.1] — 2026-10-11
 
 ### Fixed
