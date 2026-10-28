@@ -109,9 +109,9 @@ else
 fi
 
 # ── 6. Install theme-set hook ─────────────────────────────────────────────────
-chmod +x "$PLUGIN_DIR/hooks/theme-set"
-omarchy hook install theme-set "$PLUGIN_DIR/hooks/theme-set"
-echo "  Installed theme-set hook."
+chmod +x "$PLUGIN_DIR/hooks/thunderbird-theme-set"
+omarchy hook install theme-set "$PLUGIN_DIR/hooks/thunderbird-theme-set"
+echo "  Installed theme-set hook (as thunderbird-theme-set)."
 
 # ── 7. Wire OS keybindings into Hyprland ──────────────────────────────────────
 HYPR_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"

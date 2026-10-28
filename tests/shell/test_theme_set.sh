@@ -1,15 +1,15 @@
 #!/bin/bash
-# Shell tests for hooks/theme-set.
+# Shell tests for hooks/thunderbird-theme-set.
 #
 # The hook is what Omarchy calls on every `omarchy theme set`: it slugs the theme
 # name and writes it into the Thunderbird profile that will actually be read. These
 # assertions run the real hook under a temporary XDG_CONFIG_HOME with a synthetic
 # profiles.ini, so they never touch the user's live profile. They are also the tests
-# the mutation pass relies on for hooks/theme-set.
+# the mutation pass relies on for hooks/thunderbird-theme-set.
 set -u
 
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)"
-HOOK="$REPO/hooks/theme-set"
+HOOK="$REPO/hooks/thunderbird-theme-set"
 fails=0
 
 ok()  { printf '  ok   %s\n' "$1"; }
@@ -32,7 +32,7 @@ make_profile() { # make_profile <root> <profile-path> [create]
 
 run_hook() { # run_hook <root> [theme...] -> prints exit status
   local root="$1"; shift
-  XDG_CONFIG_HOME="$root" bash "$HOOK" "$@" >/dev/null 2>&1
+  OMARCHY_THUNDERBIRD_DIR="$REPO" XDG_CONFIG_HOME="$root" bash "$HOOK" "$@" >/dev/null 2>&1
   printf '%s' "$?"
 }
 
@@ -123,6 +123,33 @@ if [[ -e "$d/thunderbird/chrome" ]]; then
 else
   ok "no profiles.ini: nothing created"
 fi
+
+# ── 6. it self-locates when INSTALLED (not run from the repo checkout) ───────
+# `omarchy hook install` copies the hook to <XDG_CONFIG_HOME>/omarchy/hooks/theme-set.d/
+# and the plugin to <XDG_CONFIG_HOME>/omarchy/plugins/…, where $(dirname $BASH_SOURCE)/..
+# is the hooks dir. The hook must still find its plugin.
+e="$work/e"
+home="$work/e-home"
+plug="$e/omarchy/plugins/Maximilian-Maag.thunderbird"
+mkdir -p "$plug" "$home" "$e/omarchy/hooks/theme-set.d"
+cp -a "$REPO/bin" "$REPO/themes" "$plug/"
+cp "$HOOK" "$e/omarchy/hooks/theme-set.d/thunderbird-theme-set"
+make_profile "$e" "installed.default-release"
+HOME="$home" XDG_CONFIG_HOME="$e" bash "$e/omarchy/hooks/theme-set.d/thunderbird-theme-set" \
+  "Tokyo Night" >/dev/null 2>&1
+assert_eq "installed hook: exit status" 0 "$?"
+if [[ -f "$e/thunderbird/installed.default-release/chrome/omarchy-active-theme" ]]; then
+  ok "installed hook: finds its plugin and renders"
+else
+  bad "installed hook: finds its plugin and renders"
+fi
+
+# ── 7. with no plugin anywhere it fails LOUDLY (never a silent no-op) ────────
+g="$work/g"
+mkdir -p "$g"
+make_profile "$g" "x.default-release"
+HOME="$work/g-home" XDG_CONFIG_HOME="$g" bash "$HOOK" "Nord" >/dev/null 2>&1
+assert_eq "no plugin found: fails loudly" 1 "$?"
 
 printf '\n'
 if (( fails == 0 )); then

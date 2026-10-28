@@ -27,7 +27,7 @@ PROFILE="$ROOT/thunderbird/$PROFILE_REL"
 CHROME="$PROFILE/chrome"
 
 # ── 1. the theme-set hook writes the slug + helper into the real profile ─────
-XDG_CONFIG_HOME="$ROOT" bash "$E2E_REPO/hooks/theme-set" "Tokyo Night" >/dev/null 2>&1
+OMARCHY_THUNDERBIRD_DIR="$E2E_REPO" XDG_CONFIG_HOME="$ROOT" bash "$E2E_REPO/hooks/thunderbird-theme-set" "Tokyo Night" >/dev/null 2>&1
 assert_eq "hook: slugged state file" "tokyo-night" "$(cat "$CHROME/omarchy-active-theme" 2>/dev/null)"
 assert_file "hook: helper script present" "$CHROME/set-theme.uc.js"
 

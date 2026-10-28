@@ -12,6 +12,7 @@
 set -u
 
 E2E_REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
+export OMARCHY_THUNDERBIRD_DIR="$E2E_REPO"
 
 fails=0
 ok()  { printf '  ok   %s\n' "$1"; }

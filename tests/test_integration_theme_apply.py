@@ -16,7 +16,7 @@ import tempfile
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-HOOK = REPO / "hooks/theme-set"
+HOOK = REPO / "hooks/thunderbird-theme-set"
 SOURCE = (REPO / "themes/userChrome.css").read_text()
 
 DECL = re.compile(r"(--[a-z-]+)\s*:\s*([^;]+);")

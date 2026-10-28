@@ -23,7 +23,7 @@
       ]
     },
     {
-      "path": "hooks/theme-set",
+      "path": "hooks/thunderbird-theme-set",
       "lang": "shell",
       "tests": [
         "bash",
@@ -31,7 +31,7 @@
       ],
       "equivalent": [
         {
-          "line": 18,
+          "line": 45,
           "kind": "or->and",
           "reason": "PROFILE=$(...) || true -> && true: when the profile finder fails the substitution is the non-final operand of an && list, so bash suppresses set -e exactly as it does for ||; both forms leave PROFILE empty and fall through to the same guard. Not observable."
         }

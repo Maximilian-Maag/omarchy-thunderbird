@@ -1,4 +1,4 @@
-"""Integration tests: hooks/theme-set against a throw-away Thunderbird profile.
+"""Integration tests: hooks/thunderbird-theme-set against a throw-away Thunderbird profile.
 
 The hook is the plugin's only live integration surface: Omarchy calls it with the
 name of the active theme and it writes that theme into whichever profile
@@ -13,7 +13,7 @@ import tempfile
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-HOOK = REPO / "hooks/theme-set"
+HOOK = REPO / "hooks/thunderbird-theme-set"
 
 
 class ThemeSetHookCase(unittest.TestCase):
@@ -23,7 +23,8 @@ class ThemeSetHookCase(unittest.TestCase):
         self.root = pathlib.Path(self.tmp.name)
         self.tb = self.root / "thunderbird"
         self.tb.mkdir()
-        self.env = {**os.environ, "XDG_CONFIG_HOME": str(self.root)}
+        self.env = {**os.environ, "XDG_CONFIG_HOME": str(self.root),
+                    "OMARCHY_THUNDERBIRD_DIR": str(REPO)}
         self.env.pop("XDG_STATE_HOME", None)
 
     def add_profile(self, name, *, relative=True, exists=True):

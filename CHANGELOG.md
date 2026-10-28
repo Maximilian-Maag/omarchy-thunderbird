@@ -2,6 +2,22 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.13] — 2026-10-28
+
+### Fixed
+- **The `theme-set` hook was a silent no-op once installed, and its name collided** (#2).
+  It self-located with `$(dirname "$BASH_SOURCE")/..`, which resolves to the hooks
+  directory after `omarchy hook install` copies it there — so it never found
+  `omarchy-tb-render-css`, hit the `|| true`-guarded profile lookup, and `exit 0`d
+  having rendered nothing. Verified live on the installed machine: a theme switch
+  returned 0 and left `omarchy-active-theme` unchanged. It now self-locates
+  (`$OMARCHY_THUNDERBIRD_DIR` → the installed plugin dirs → the dev checkout) and
+  fails loudly when it cannot. Separately, the hook shipped under the bare basename
+  `theme-set`, which omarchy-keepassxc, omarchy-contacts and omarchy-qutebrowser also
+  use, so installing any of them clobbered it (only one bare `theme-set` survives in
+  `theme-set.d`). It is now `hooks/thunderbird-theme-set`. New shell tests run it from
+  an installed layout and prove both the find and the loud failure.
+
 ## [1.9.12] — 2026-10-28
 
 ### Fixed

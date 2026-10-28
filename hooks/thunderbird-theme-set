@@ -8,12 +8,39 @@
 # theme to take effect — the earlier attribute-selector approach silently did nothing
 # without one. Thunderbird reads chrome/userChrome.css at startup, so the change
 # lands on the next launch; `omarchy-thunderbird-reload` restarts it immediately.
+#
+# Two hazards this hook is written around:
+#   * `omarchy hook install theme-set <file>` installs under the file's BASENAME, so
+#     this file is named `thunderbird-theme-set` — a bare `theme-set` would collide
+#     with omarchy-keepassxc / omarchy-contacts / omarchy-qutebrowser, which each ship
+#     a `theme-set`, and the last installed would silently win.
+#   * Once copied into the hooks directory, `$(dirname "$BASH_SOURCE")/..` resolves to
+#     THAT directory, not the plugin — the CLI lookup then misses and the hook exits 0
+#     having rendered nothing. So it self-locates instead.
 set -euo pipefail
 
 THEME=$(echo "${1:-}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
 [[ -z "$THEME" ]] && exit 0
 
-PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Self-locate the plugin: an explicit override, the installed plugin dirs, then a
+# development checkout. Never $(dirname "$BASH_SOURCE")/.. — see the note above.
+find_plugin() {
+  local cand
+  for cand in "${OMARCHY_THUNDERBIRD_DIR:-}" \
+              "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/Maximilian-Maag.thunderbird" \
+              "${XDG_DATA_HOME:-$HOME/.local/share}/omarchy/plugins/Maximilian-Maag.thunderbird" \
+              "$HOME/.local/share/omarchy/plugins/Maximilian-Maag.thunderbird" \
+              "$HOME/Work/omarchy-thunderbird"; do
+    [[ -n $cand && -x $cand/bin/omarchy-tb-render-css ]] && { printf '%s\n' "$cand"; return 0; }
+  done
+  false
+}
+
+PLUGIN_DIR="$(find_plugin)" || PLUGIN_DIR=""
+if [[ -z $PLUGIN_DIR ]]; then
+  echo "thunderbird-theme-set: cannot locate the omarchy-thunderbird plugin (set OMARCHY_THUNDERBIRD_DIR)" >&2
+  exit 1
+fi
 
 PROFILE="$("$PLUGIN_DIR/bin/omarchy-tb-profile" 2>/dev/null)" || true
 [[ -z "$PROFILE" || ! -d "$PROFILE" ]] && exit 0
