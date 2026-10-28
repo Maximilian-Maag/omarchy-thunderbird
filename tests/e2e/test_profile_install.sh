@@ -62,11 +62,6 @@ if [[ -n $tb_pid ]] && [[ -f "$PROFILE/prefs.js" ]]; then
   # ones that equal a default are (correctly) absent from the file.
   assert_contains "prefs.js: userChrome theming enabled" \
     'user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);' "$PROFILE/prefs.js"
-  # Telemetry/studies off, both non-default.
-  assert_contains "prefs.js: normandy studies disabled" \
-    'user_pref("app.normandy.enabled", false);' "$PROFILE/prefs.js"
-  assert_contains "prefs.js: crash-report nag disabled" \
-    'user_pref("browser.crashReports.unsubmittedCheck.enabled", false);' "$PROFILE/prefs.js"
   # A non-boolean value, to show typed values survive the round-trip.
   assert_contains "prefs.js: crash reporter URL blanked" \
     'user_pref("breakpad.reportURL", "");' "$PROFILE/prefs.js"

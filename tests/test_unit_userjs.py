@@ -73,14 +73,16 @@ class UserJsStructureCase(unittest.TestCase):
         self.assertIs(prefs["toolkit.legacyUserProfileCustomizations.stylesheets"], True)
 
 
-# Real Thunderbird prefs the scraper cannot resolve from the shipped tree: one is read
-# through a pref branch (browser.crashReports.unsubmittedCheck.*) and Normandy lives in
-# browser/ code outside the messenger + toolkit trees it walks. Set here because it is
-# protective if real and harmless if not.
-UNRESOLVABLE_BUT_REAL = {
-    "app.normandy.enabled",
-    "browser.crashReports.unsubmittedCheck.enabled",
-}
+# Real Thunderbird prefs the scraper cannot resolve from the shipped tree. Kept as an
+# explicit, must-be-justified allowlist rather than a silent skip: an entry here is a
+# claim, and the entry must still be a name the installed app actually reads somewhere.
+# EMPTY on purpose — the two former entries (app.normandy.enabled,
+# browser.crashReports.unsubmittedCheck.enabled) were measurably fiction: the binary
+# carries only app.normandy.user_id, and the real crash pref is
+# browser.crashReports.unsubmittedCheck.autoSubmit2 (itself gated on MOZ_CRASHREPORTER,
+# which this build disables). Do not repopulate this without a probe proving the name is
+# real on the installed Thunderbird.
+UNRESOLVABLE_BUT_REAL = set()
 
 
 class UserJsRealPrefsCase(unittest.TestCase):

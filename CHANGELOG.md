@@ -2,6 +2,20 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.12] — 2026-10-28
+
+### Fixed
+- **`profile/user.js` set two preferences Thunderbird does not implement, so the
+  intended hardening silently did nothing** (#1). `app.normandy.enabled` exists in
+  Firefox only — the Thunderbird binary carries just `app.normandy.user_id` — and the
+  real crash pref is `browser.crashReports.unsubmittedCheck.autoSubmit2`, not
+  `.enabled` (and it is itself gated on `MOZ_CRASHREPORTER`, which this build
+  disables). Both were dropped from `prefs.js` while reading as configuration. The
+  crash-submission intent is already covered by the real, honoured `breakpad.reportURL = ""`
+  and the studies intent by the real `app.shield.optoutstudies.enabled`, so both lines
+  are removed. `UNRESOLVABLE_BUT_REAL` — the test allowlist that had let the fiction
+  through — is now empty, and the regression + e2e expectations were updated.
+
 ## [1.9.11] — 2026-10-11
 
 ### Fixed

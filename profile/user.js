@@ -33,11 +33,14 @@ user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("datareporting.policy.dataSubmissionEnabled", false);
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("toolkit.telemetry.unified", false);
-user_pref("app.normandy.enabled", false);
 user_pref("app.shield.optoutstudies.enabled", false);
-// Disable crash reporter
+// Disable crash reporting. breakpad.reportURL is the real, honoured switch: blanking it
+// stops crash reports being submitted. (app.normandy.enabled and
+// browser.crashReports.unsubmittedCheck.enabled used to sit here, but neither is a
+// Thunderbird pref: the binary only carries app.normandy.user_id, the real crash pref is
+// browser.crashReports.unsubmittedCheck.autoSubmit2, and this build ships no crashreporter
+// at all — so both names were silently dropped and did nothing.)
 user_pref("breakpad.reportURL", "");
-user_pref("browser.crashReports.unsubmittedCheck.enabled", false);
 
 // ── UI ────────────────────────────────────────────────────────────────────────
 user_pref("mail.pane_config.dynamic", 2); // wide layout (folder|thread|message)

@@ -25,8 +25,6 @@ GOLDEN = {
     "datareporting.healthreport.uploadEnabled": False,
     "datareporting.policy.dataSubmissionEnabled": False,
     "toolkit.telemetry.enabled": False,
-    "app.normandy.enabled": False,
-    "browser.crashReports.unsubmittedCheck.enabled": False,
     "mail.biff.animate_dock_icon": False,
     "mail.biff.alert.show_preview": False,
     "mail.biff.play_sound": False,
