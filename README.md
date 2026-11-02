@@ -93,6 +93,10 @@ actually set — by the per-theme blocks and by the renderer's `derived_block` f
 themes. If a future Thunderbird rename breaks it, that test fails rather than the window
 quietly going grey.
 
+The bridge also covers the **new-mail attention colour**: Thunderbird 155 hardcodes
+`--new-folder-color` to blue, so a folder or account with unread mail was the last piece of
+chrome still off-palette.
+
 Note: Thunderbird 155's small **icons** (the spaces tray and the folder-pane glyphs) are
 not driven by these variables, so they keep Thunderbird's own colours.
 

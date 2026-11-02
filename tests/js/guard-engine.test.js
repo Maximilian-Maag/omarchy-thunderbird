@@ -173,6 +173,14 @@ test('reply-to mismatch is flagged', () => {
   assert.ok(r.reasons.some(x => x.code === 'reply-to-mismatch'));
 });
 
+test('a reply-to on another subdomain of the same registrable domain is NOT a mismatch', () => {
+  // GitHub notification mail: From notifications@github.com, Reply-To noreply.github.com.
+  // A different subdomain of the sender's own domain is routine, not phishing.
+  const r = engine.analyzeSender({ from: 'notifications@github.com', replyTo: 'noreply.github.com' });
+  assert.strictEqual(r.reasons.some(x => x.code === 'reply-to-mismatch'), false);
+  assert.strictEqual(r.verdict, 'ok');
+});
+
 test('dmarc failure is flagged', () => {
   const r = engine.analyzeSender({ from: 'a@example.com', authResults: 'mx.google.com; dmarc=fail; spf=fail' });
   assert.ok(r.reasons.some(x => x.code === 'dmarc-fail'));

@@ -178,7 +178,11 @@
       if (!ok) add(40, "brand-impersonation", brand.name + " from " + (fromDomain || "?"));
     });
 
-    if (replyDomain && fromDomain && replyDomain !== fromDomain) {
+    // Replies that would go to a *different organisation* are the signal. A different
+    // subdomain of the same registrable domain is routine and legitimate — GitHub's
+    // notifications@github.com sets Reply-To: noreply.github.com — so compare the
+    // registrable domains, as every other domain check in this engine does.
+    if (replyDomain && fromDomain && registrable(replyDomain) !== registrable(fromDomain)) {
       add(25, "reply-to-mismatch", replyDomain);
     }
 

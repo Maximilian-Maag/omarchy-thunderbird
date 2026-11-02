@@ -1161,8 +1161,14 @@
   --color-accent-primary-hover: var(--button-primary-hover-bgcolor) !important;
   --sidebar-highlight-background-color: var(--selected-item-color) !important;
   --selected-item-color: var(--button-primary-bgcolor) !important;
-  --listbox-focused-selected-bg: var(--selected-item-color) !important;
-  --listbox-selected-bg: var(--selected-item-color) !important;
+  /* NOTE: do not set --listbox-selected-bg / --listbox-focused-selected-bg here.
+     TB derives both from --selected-item-color (focused = solid, selected = a subtle
+     mix), and overriding them with one flat colour erases the difference — the message
+     list then shows no visible focus until you move the cursor. */
+
+  /* new / unread mail attention colour — TB 155 hardcodes this to blue */
+  --new-folder-color: var(--button-primary-bgcolor) !important;
+  --new-focused-folder-color: var(--selected-item-text-color) !important;
 
   /* icons */
   --toolbarbutton-icon-fill: var(--toolbar-color) !important;

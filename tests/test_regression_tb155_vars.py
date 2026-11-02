@@ -51,8 +51,8 @@ MAPPING = {
     "--color-accent-primary": "--button-primary-bgcolor",
     "--sidebar-highlight-background-color": "--selected-item-color",
     "--selected-item-color": "--button-primary-bgcolor",
-    "--listbox-focused-selected-bg": "--selected-item-color",
-    "--listbox-selected-bg": "--selected-item-color",
+    "--new-folder-color": "--button-primary-bgcolor",
+    "--new-focused-folder-color": "--selected-item-text-color",
 }
 
 

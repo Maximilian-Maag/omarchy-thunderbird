@@ -2,6 +2,30 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.15] — 2026-11-02
+
+### Fixed
+- **A folder or account with new mail stayed blue under every theme.** Thunderbird 155
+  hardcodes the new-mail attention colour
+  (`--new-folder-color: light-dark(var(--color-blue-60), var(--color-blue-40))`), and the
+  compat bridge did not cover it — so the one indicator that says "you have mail" was the
+  last part of the chrome still on Thunderbird's own palette. The bridge now maps
+  `--new-folder-color` onto the theme accent and `--new-focused-folder-color` onto the
+  selection text.
+- **The scam guard false-positived on legitimate GitHub notification mail.**
+  `reply-to-mismatch` compared whole domains, so GitHub's `notifications@github.com` with
+  `Reply-To: noreply.github.com` scored +25 and raised a "possible scam or phishing"
+  banner. Every other domain check in the engine already compares the *registrable* domain
+  (`registrable()`); this one now does too — a different subdomain of the sender's own
+  domain is no longer flagged, while a reply-to on a genuinely different organisation still
+  is. A new js test pins the GitHub case.
+- **The message list showed no visible focus when you tabbed into it.** The compat bridge
+  had set `--listbox-selected-bg` and `--listbox-focused-selected-bg` to a single flat
+  colour, which erased Thunderbird's own distinction between a *selected* row (a subtle mix)
+  and a *focused* row (solid accent) — so tabbing into the list highlighted nothing until you
+  moved the cursor. Thunderbird already derives both from `--selected-item-color`, so those
+  overrides were redundant and are removed (a note in the stylesheet says why).
+
 ## [1.9.14] — 2026-11-02
 
 ### Fixed
