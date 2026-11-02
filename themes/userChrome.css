@@ -1107,3 +1107,65 @@
   background-color: var(--thread-pane-background) !important;
   color: var(--thread-pane-color) !important;
 }
+
+/* ============================================================
+   THUNDERBIRD 155 COMPATIBILITY
+   ------------------------------------------------------------
+   Thunderbird 155 replaced the chrome variable layer this plugin
+   was written against:
+
+     * the surface colours (--toolbar-bgcolor, --*-pane-*) became a
+       --layout-* system: --layout-background-0/1/2 (surfaces) and
+       --layout-color-0/1/2 (text);
+     * the button variables were renamed to the
+       --button-<variant>-<property> form (--button-primary-bgcolor
+       -> --button-primary-background-color);
+     * selection and the accent are now derived from
+       --selected-item-color / --color-accent-primary / the
+       --button-primary-* family rather than read directly.
+
+   The per-theme :root blocks above still set the original names
+   (they are the theme palette, and the supplementary rules at the
+   end consume them too). This layer bridges those palette entries
+   onto the names Thunderbird 155 actually consumes, so the whole
+   chrome follows the theme again. It is a no-op on older releases,
+   which ignore the new names.
+
+   Keep this block in sync with the variables in
+   bin/omarchy-tb-render-css (derived_block) and themes/userChrome.css,
+   and with tests/test_regression_tb155_vars.py.
+   ============================================================ */
+:root {
+  /* surfaces */
+  --toolbar-background-color: var(--toolbar-bgcolor) !important;
+  --toolbar-text-color: var(--toolbar-color) !important;
+  --layout-background-0: var(--toolbar-bgcolor) !important;
+  --layout-background-1: var(--thread-pane-background) !important;
+  --layout-color-0: var(--toolbar-color) !important;
+  --layout-color-1: var(--thread-pane-color) !important;
+  --sidebar-background: var(--sidebar-background-color) !important;
+  --sidebar-color: var(--sidebar-text-color) !important;
+  --tree-view-color: var(--thread-pane-color) !important;
+  --theme-splitter-color: var(--splitter-color) !important;
+
+  /* button hover / active */
+  --toolbarbutton-background-color-hover: var(--toolbarbutton-hover-background) !important;
+  --toolbarbutton-background-color-active: var(--toolbarbutton-active-background) !important;
+
+  /* accent — primary buttons and selection derive from these in TB 155 */
+  --button-primary-background-color: var(--button-primary-bgcolor) !important;
+  --button-primary-hover-background-color: var(--button-primary-hover-bgcolor) !important;
+  --button-primary-active-background-color: var(--button-primary-hover-bgcolor) !important;
+  --button-primary-text-color: var(--button-primary-color) !important;
+  --color-accent-primary: var(--button-primary-bgcolor) !important;
+  --color-accent-primary-hover: var(--button-primary-hover-bgcolor) !important;
+  --sidebar-highlight-background-color: var(--selected-item-color) !important;
+  --selected-item-color: var(--button-primary-bgcolor) !important;
+  --listbox-focused-selected-bg: var(--selected-item-color) !important;
+  --listbox-selected-bg: var(--selected-item-color) !important;
+
+  /* icons */
+  --toolbarbutton-icon-fill: var(--toolbar-color) !important;
+  --theme-icon-color: var(--toolbar-color) !important;
+  --icon-color: var(--toolbar-color) !important;
+}

@@ -74,6 +74,28 @@ Thunderbird reads `chrome/userChrome.css` only when it starts, so a theme change
 the next launch. `omarchy-thunderbird-reload` restarts it for you when you want it now; set
 `OMARCHY_THUNDERBIRD_AUTORELOAD=1` to have the `theme-set` hook do that on every switch.
 
+### Thunderbird 155 compatibility
+
+The theme blocks set the chrome variables the plugin was written against
+(`--toolbar-bgcolor`, the `--*-pane-*` family, `--button-primary-bgcolor`, …).
+**Thunderbird 155 replaced that layer** — the surfaces moved to a `--layout-*` system
+(`--layout-background-N` / `--layout-color-N`), the button variables were renamed to
+`--button-<variant>-<property>`, and selection and the accent are now *derived* from
+`--selected-item-color` / `--color-accent-primary` / the `--button-primary-*` family. On a
+stock 155 that made every theme render as Thunderbird's default blue-and-grey, because none
+of the old names are read any more.
+
+A compatibility `:root` block at the end of `themes/userChrome.css` now bridges the palette
+onto the names 155 consumes, so the whole chrome follows the theme again. It is a no-op on
+older releases (they ignore the new names) and is pinned by
+`tests/test_regression_tb155_vars.py`, which also asserts every bridged source variable is
+actually set — by the per-theme blocks and by the renderer's `derived_block` for custom
+themes. If a future Thunderbird rename breaks it, that test fails rather than the window
+quietly going grey.
+
+Note: Thunderbird 155's small **icons** (the spaces tray and the folder-pane glyphs) are
+not driven by these variables, so they keep Thunderbird's own colours.
+
 ## Unread bar widget
 
 ```bash

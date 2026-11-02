@@ -2,6 +2,28 @@
 
 All notable changes to omarchy-thunderbird are documented here.
 
+## [1.9.14] — 2026-11-02
+
+### Fixed
+- **Thunderbird 155 renamed the chrome variables the theme blocks set, so no Omarchy theme
+  reached Thunderbird at all** — the window rendered in Thunderbird's default blue-and-grey
+  no matter the active theme. 155 replaced the surface variables with a `--layout-*` system
+  (`--layout-background-0/1`, `--layout-color-0/1`), renamed the button variables to
+  `--button-<variant>-<property>`, and now *derives* selection and the accent from
+  `--selected-item-color` / `--color-accent-primary` / the `--button-primary-*` family. The
+  old `--toolbar-bgcolor` / `--*-pane-*` names are simply not read any more — verified live:
+  setting the old name (even with `!important`) left the toolbar its default grey, the
+  current name repainted it immediately, and a first-load test rule proved `userChrome.css`
+  itself *was* being loaded, which localised the fault to the variable names rather than the
+  stylesheet. A compatibility `:root` block at the end of `themes/userChrome.css` now bridges
+  the palette onto the names 155 consumes, so the toolbar, folder pane, thread list, message
+  pane, buttons and selection follow the theme again. It is a no-op on older releases, which
+  ignore the new names. New `tests/test_regression_tb155_vars.py` pins the mapping *and*
+  asserts every bridged source variable is actually set — by the per-theme blocks and by the
+  renderer's `derived_block` for custom themes — so a future rename fails the suite instead
+  of silently greying the window. Thunderbird 155's small tray/folder icons are not
+  variable-driven and keep Thunderbird's own colours (noted in the README).
+
 ## [1.9.13] — 2026-10-28
 
 ### Fixed
