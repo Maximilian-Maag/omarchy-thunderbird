@@ -48,7 +48,12 @@ class ThemeApplyCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def run_hook(self, *args):
-        env = dict(os.environ, XDG_CONFIG_HOME=str(self.root))
+        # Point the hook at the checkout under test. Without this it self-locates and,
+        # on CI (where the repo is not at ~/Work/omarchy-thunderbird), finds nothing and
+        # fails — the test would then be measuring the runner's layout, not the code.
+        env = dict(os.environ,
+                   XDG_CONFIG_HOME=str(self.root),
+                   OMARCHY_THUNDERBIRD_DIR=str(REPO))
         return subprocess.run(["bash", str(HOOK), *args], env=env,
                               capture_output=True, text=True)
 
