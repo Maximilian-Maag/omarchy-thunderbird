@@ -11,6 +11,10 @@
 const GUARD_TAG = "suspicious";
 const LAST_VERDICT_KEY = "omarchy-thunderbird:last-verdict";
 
+// Auto-sort maps the engine's boolean `star` action onto Thunderbird's built-in
+// "starred" tag — the flag behind the star column in the message list.
+const STAR_TAG = "starred";
+
 // Pull http(s) links out of a message part's body text or HTML.
 function extractLinks(body) {
   const found = [];
@@ -139,9 +143,17 @@ async function applySort(message) {
     if (!result.acted) return;
 
     const updates = {};
-    if (result.add_tags.length) {
-      updates.tags = Array.from(new Set((message.tags || []).concat(result.add_tags)));
-    }
+    const before = message.tags || [];
+    const tags = before.slice();
+    (result.add_tags || []).forEach(function (tag) {
+      if (tags.indexOf(tag) === -1) tags.push(tag);
+    });
+    // star is a boolean from the engine; the write path applies it as the "starred"
+    // tag, which is what Thunderbird's star column tracks.
+    if (result.star && tags.indexOf(STAR_TAG) === -1) tags.push(STAR_TAG);
+    if (tags.length !== before.length) updates.tags = tags;
+    // mark_read is likewise a boolean; the read flag lives directly on the message.
+    if (result.mark_read) updates.read = true;
     if (Object.keys(updates).length) {
       await browser.messages.update(message.id, updates);
     }
@@ -166,5 +178,5 @@ async function applySort(message) {
 }
 
 browser.messages.onNewMailReceived.addListener((folder, messages) => {
-  messages.messages.forEach(applySort);
+  return Promise.all(messages.messages.map(applySort));
 });
