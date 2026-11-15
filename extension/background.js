@@ -97,9 +97,18 @@ async function scanMessage(displayed) {
 const tabVerdicts = new Map();
 
 browser.messageDisplay.onMessageDisplayed.addListener((tab, displayed) => {
+  // Drop any verdict left by a previous message in this tab before scanning, so a
+  // reused tab id never serves the previous message's banner.
+  if (tab) tabVerdicts.delete(tab.id);
   scanMessage(displayed).then(payload => {
     if (tab) tabVerdicts.set(tab.id, payload || null);
   });
+});
+
+// Release a tab's verdict when the tab goes away: without this the map grows one
+// entry per distinct tab id for the life of the background page.
+browser.tabs.onRemoved.addListener((tabId) => {
+  tabVerdicts.delete(tabId);
 });
 
 browser.runtime.onMessage.addListener((message, sender) => {

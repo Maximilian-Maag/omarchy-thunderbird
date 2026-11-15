@@ -41,6 +41,9 @@ function loadBackground(opts = {}) {
     messageDisplay: {
       onMessageDisplayed: { addListener: (fn) => { listeners.displayed = fn; } },
     },
+    tabs: {
+      onRemoved: { addListener: (fn) => { listeners.tabRemoved = fn; } },
+    },
     runtime: {
       onMessage: { addListener: (fn) => { listeners.runtimeMessage = fn; } },
       getURL: (rel) => 'https://guard.example/' + rel,
@@ -186,4 +189,37 @@ test('a nested part body and a top-level body both reach GuardEngine.analyze', a
   });
   assert.ok(top.links.some((l) => l.href === 'https://evil.example/top'),
             'the top-level body must be read too');
+});
+
+// ── #9: tabVerdicts must not leak ────────────────────────────────────────────
+test('a closed tab stops serving its verdict', async () => {
+  const { listeners } = loadBackground({
+    message: { id: 9, tags: [], author: 'Friend <friend@example.com>' },
+    full: { headers: {} },
+  });
+  listeners.displayed({ id: 3 }, { id: 9 });
+  const verdict = await until(() =>
+    listeners.runtimeMessage({ type: 'omarchy-guard-verdict' }, { tab: { id: 3 } }));
+  assert.ok(verdict, 'the verdict is reachable while the tab is open');
+
+  listeners.tabRemoved(3);
+  assert.strictEqual(await listeners.runtimeMessage({ type: 'omarchy-guard-verdict' }, { tab: { id: 3 } }),
+                     null, 'a closed tab must not keep serving its verdict');
+});
+
+test('a reused tab id does not serve the previous message verdict', async () => {
+  const { listeners } = loadBackground({
+    message: { id: 9, tags: [], author: 'Friend <friend@example.com>' },
+    full: { headers: {} },
+  });
+  listeners.displayed({ id: 3 }, { id: 9 });
+  const first = await until(() =>
+    listeners.runtimeMessage({ type: 'omarchy-guard-verdict' }, { tab: { id: 3 } }));
+  assert.strictEqual(first.messageId, 9);
+
+  // A new message in the same tab id must clear the stale entry immediately, before
+  // its own (async) scan resolves.
+  listeners.displayed({ id: 3 }, { id: 99 });
+  assert.strictEqual(await listeners.runtimeMessage({ type: 'omarchy-guard-verdict' }, { tab: { id: 3 } }),
+                     null, 'the previous message verdict must not leak to the new one');
 });
