@@ -25,6 +25,13 @@ CHROME_DIR="$PROFILE/chrome"
 # Resolve the theme: explicit argument, then the recorded theme, then Omarchy's
 # current theme, then the bundled fallback.
 THEME="${1:-}"
+# Slugify an explicit argument the same way the theme-set hook does. A caller very
+# often passes the display name `omarchy theme current` prints ("Tokyo Night"); left
+# unslugged it makes read_palette look for `Tokyo Night/colors.toml`, miss, and fall
+# back to the bundled catppuccin block while still reporting success.
+if [[ -n "$THEME" ]]; then
+  THEME="$(printf '%s' "$THEME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+fi
 if [[ -z "$THEME" ]]; then
   THEME="$(cat "$CHROME_DIR/omarchy-active-theme" 2>/dev/null || true)"
 fi

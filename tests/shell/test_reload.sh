@@ -123,6 +123,20 @@ else
   bad "precedence: an explicit argument wins"
 fi
 
+# ── 6b. a display-name argument is slugified, not taken literally ────────────
+# `omarchy theme current` prints a display name like "Tokyo Night"; passing it must
+# render the tokyo-night palette, not silently fall back to catppuccin.
+PATH="$work/stub-stop:$PATH" XDG_CONFIG_HOME="$e" bash "$RELOAD" "Tokyo Night" >/dev/null 2>&1
+assert_eq "slug: exit status" 0 "$?"
+if grep -q 'applied theme = tokyo-night' \
+     "$e/thunderbird/abc.default-release/chrome/userChrome.css" 2>/dev/null; then
+  ok "slug: a display-name argument is slugified"
+else
+  bad "slug: a display-name argument is slugified (not the catppuccin fallback)"
+fi
+assert_eq "slug: recorded the slug, not the display name" "tokyo-night" \
+  "$(cat "$e/thunderbird/abc.default-release/chrome/omarchy-active-theme" 2>/dev/null)"
+
 # ── 7. no recorded theme: `omarchy theme current` supplies it ────────────────
 f="$work/f"; make_profile "$f"
 mkdir -p "$work/stub-omarchy"
