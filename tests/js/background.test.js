@@ -105,3 +105,32 @@ test('a non-matching message is not written', async () => {
 
   assert.deepStrictEqual(calls.update, [], 'an unmatched message must not be mutated');
 });
+
+// Poll a predicate until it yields a truthy value (the scan's completion signal).
+async function until(predicate, timeout = 1000) {
+  const start = Date.now();
+  for (;;) {
+    const value = await predicate();
+    if (value) return value;
+    if (Date.now() - start > timeout) throw new Error('timed out waiting for the condition');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+test('the displayed verdict is held for the banner, not stashed in orphan storage', async () => {
+  const { calls, listeners } = loadBackground({
+    message: { id: 9, tags: [], author: 'Friend <friend@example.com>' },
+    full: { headers: {} },
+  });
+  listeners.displayed({ id: 3 }, { id: 9 });
+
+  const verdict = await until(() =>
+    listeners.runtimeMessage({ type: 'omarchy-guard-verdict' }, { tab: { id: 3 } }));
+
+  assert.ok(verdict, 'the verdict must be reachable for the in-message banner');
+  assert.strictEqual(verdict.messageId, 9);
+  // The old code wrote this to browser.storage.local under a key no component ever
+  // read; the verdict now lives only in the per-tab map the banner queries.
+  assert.deepStrictEqual(calls.storageSet, [],
+                         'the verdict must not be written to the orphan storage key');
+});

@@ -79,7 +79,7 @@ class ManifestCase(unittest.TestCase):
                               "%s needs the %s permission" % (call, perm))
 
     def test_requests_the_base_permissions_it_uses(self):
-        for perm in ("messagesRead", "messagesModify", "storage", "notifications"):
+        for perm in ("messagesRead", "messagesModify", "notifications"):
             self.assertIn(perm, self.manifest["permissions"])
 
 

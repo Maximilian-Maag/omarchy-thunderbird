@@ -2,14 +2,13 @@
 //
 // On every displayed message: gather the sender, links and authentication results,
 // score them with GuardEngine, and if the verdict is warn/danger tag the message
-// "suspicious" and raise a notification. The last verdict per message is stashed in
-// extension storage so the Omarchy bar widget can surface it.
+// "suspicious" and raise a notification. The verdict for the message on screen is
+// held in memory per tab (tabVerdicts, below) so the in-message banner can ask for it.
 //
 // Everything is defensive: a guard that throws on an odd message is worse than no
 // guard, so each step is isolated and failures are logged, not propagated.
 
 const GUARD_TAG = "suspicious";
-const LAST_VERDICT_KEY = "omarchy-thunderbird:last-verdict";
 
 // Auto-sort maps the engine's boolean `star` action onto Thunderbird's built-in
 // "starred" tag — the flag behind the star column in the message list.
@@ -59,7 +58,6 @@ async function scanMessage(displayed) {
         result.links.reduce((acc, l) => acc.concat(l.reasons), [])),
       at: Date.now(),
     };
-    await browser.storage.local.set({ [LAST_VERDICT_KEY]: payload });
 
     if (result.verdict === "ok") return payload;
 
