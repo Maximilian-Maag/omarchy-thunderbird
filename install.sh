@@ -160,6 +160,7 @@ MAIL_MIMES=(
   text/x-vcard
   x-scheme-handler/webcal
   x-scheme-handler/webcals
+  x-scheme-handler/mid
 )
 
 # User-level
