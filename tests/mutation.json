@@ -68,12 +68,7 @@
         {
           "line": 17,
           "kind": "or->and",
-          "reason": "PROFILE=$(...) || true -> && true: the failing substitution is the non-final operand of an && list, so set -e is suppressed exactly as for ||; both forms continue with an empty PROFILE and hit the same guard. Not observable."
-        },
-        {
-          "line": 19,
-          "kind": "number±1",
-          "reason": "the mutated digit is the file descriptor in '>&2'; '>&3' only redirects the error message to an unopened fd. Control flow and exit status are unchanged, and no test asserts on the diagnostic stream."
+          "reason": "PROFILE=$(...) || true -> && true: the failing substitution is the non-final operand of an && list, so set -e is suppressed exactly as for ||; both forms continue with an empty PROFILE and hit the same guard, and the diagnostic is printed in both."
         }
       ]
     },

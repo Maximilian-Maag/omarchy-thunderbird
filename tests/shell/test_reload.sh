@@ -84,10 +84,18 @@ fi
 if [[ -e "$work/stub-stop/._pkill" ]]; then bad "reload: did NOT signal when not running"; else ok "reload: did NOT signal when not running"; fi
 if [[ -e "$work/stub-stop/._setsid" ]]; then bad "reload: did NOT relaunch when not running"; else ok "reload: did NOT relaunch when not running"; fi
 
-# ── 3. no profile: reload fails loudly (exit 1) ──────────────────────────────
+# ── 3. no profile: reload fails loudly (exit 1) and names the reason ──────────
+# Asserting only the exit status is vacuous: a failing profile finder that *dies*
+# under set -e also exits 1. Pin the actual diagnostic so "reported no profile" is
+# told apart from "died for an unrelated reason".
 c="$work/c"; mkdir -p "$c/thunderbird"
-PATH="$work/stub-stop:$PATH" XDG_CONFIG_HOME="$c" bash "$RELOAD" "nord" >/dev/null 2>&1
+PATH="$work/stub-stop:$PATH" XDG_CONFIG_HOME="$c" bash "$RELOAD" "nord" >/dev/null 2>"$work/c.err"
 assert_eq "no profile: exit status" 1 "$?"
+if grep -q "no Thunderbird profile found" "$work/c.err"; then
+  ok "no profile: reported the missing profile on stderr"
+else
+  bad "no profile: reported the missing profile on stderr (got: $(cat "$work/c.err"))"
+fi
 
 # ── 4. profiles.ini points at a missing dir: fail, and create nothing ────────
 d="$work/d"; mkdir -p "$d/thunderbird"
