@@ -34,6 +34,7 @@ import json
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import sys
 
@@ -331,6 +332,12 @@ def write_atomic(path: pathlib.Path, text: str) -> None:
     """Write text, replacing the file — never following a symlink to its target."""
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text)
+    # os.replace keeps the TEMP file's mode (process umask, usually 0644), so an
+    # existing user.js/prefs.js at 0600 would silently become world-readable. Copy
+    # the destination's mode onto the temp before the swap. A symlink is left alone
+    # on purpose: it is replaced by a real file, and lchmod is not portable.
+    if not path.is_symlink() and path.exists():
+        os.chmod(tmp, stat.S_IMODE(path.stat().st_mode))
     os.replace(tmp, path)
 
 

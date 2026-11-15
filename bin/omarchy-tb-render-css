@@ -33,6 +33,7 @@ import colorsys
 import os
 import pathlib
 import re
+import stat
 import sys
 
 FALLBACK_BLOCK = re.compile(r"(:root\s*\{)(.*?)(\})", re.S)
@@ -253,6 +254,11 @@ def write_atomic(path: pathlib.Path, text: str) -> None:
     """
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text)
+    # os.replace keeps the TEMP file's mode, so an existing file at 0600 would come
+    # back 0644 (world-readable). Copy the destination's mode onto the temp first.
+    # A symlink is skipped: it is swapped for a real file and lchmod is not portable.
+    if not path.is_symlink() and path.exists():
+        os.chmod(tmp, stat.S_IMODE(path.stat().st_mode))
     os.replace(tmp, path)
 
 

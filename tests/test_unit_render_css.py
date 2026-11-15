@@ -9,8 +9,10 @@ target.
 
 import importlib.machinery
 import importlib.util
+import os
 import pathlib
 import re
+import stat
 import tempfile
 import unittest
 
@@ -138,6 +140,18 @@ class WriteAtomicCase(unittest.TestCase):
             dest = pathlib.Path(tmp) / "out.css"
             render_css.write_atomic(dest, "hello")
             self.assertEqual(dest.read_text(), "hello")
+
+    def test_preserves_an_existing_destinations_mode(self):
+        # os.replace keeps the temp file's mode; an existing 0600 file must not come
+        # back world-readable (0644) after a rewrite.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = pathlib.Path(tmp) / "userChrome.css"
+            dest.write_text("old")
+            os.chmod(dest, 0o600)
+            render_css.write_atomic(dest, "new")
+            self.assertEqual(dest.read_text(), "new")
+            self.assertEqual(stat.S_IMODE(dest.stat().st_mode), 0o600)
 
 
 class MainCase(unittest.TestCase):

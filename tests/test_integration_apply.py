@@ -9,6 +9,7 @@ user added by hand survives a re-run.
 import os
 import pathlib
 import re
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -63,6 +64,15 @@ class ApplyIntegrationCase(unittest.TestCase):
         target.write_text(target.read_text() + '\nuser_pref("mine.keep", 7);\n')
         self.run_apply()
         self.assertIn('user_pref("mine.keep", 7);', self.userjs)
+
+    def test_an_existing_0600_user_js_keeps_its_mode(self):
+        # A user.js is 0600 in a real profile; an atomic rewrite must not turn it
+        # into a world-readable 0644 file.
+        self.run_apply()
+        target = self.profile / "user.js"
+        os.chmod(target, 0o600)
+        self.run_apply()
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
 
 
 if __name__ == "__main__":

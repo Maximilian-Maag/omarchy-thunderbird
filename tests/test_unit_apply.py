@@ -11,8 +11,10 @@ dropped from prefs.js and does nothing).
 import importlib.machinery
 import importlib.util
 import json
+import os
 import pathlib
 import re
+import stat
 import tempfile
 import unittest
 import zipfile
@@ -268,6 +270,25 @@ class AccountManagerPrefsCase(unittest.TestCase):
     def test_next_free_server_skips_used_numbers(self):
         self.assertEqual(apply._next_free_server(set()), "server1")
         self.assertEqual(apply._next_free_server({"server1", "server2"}), "server3")
+
+
+class WriteAtomicCase(unittest.TestCase):
+    def test_preserves_an_existing_destinations_mode(self):
+        # os.replace keeps the temp file's mode: an existing 0600 user.js/prefs.js
+        # must not be replaced by a world-readable 0644 file.
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = pathlib.Path(tmp) / "user.js"
+            dest.write_text("old")
+            os.chmod(dest, 0o600)
+            apply.write_atomic(dest, "new")
+            self.assertEqual(dest.read_text(), "new")
+            self.assertEqual(stat.S_IMODE(dest.stat().st_mode), 0o600)
+
+    def test_a_missing_destination_is_created(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = pathlib.Path(tmp) / "user.js"
+            apply.write_atomic(dest, "hello")
+            self.assertEqual(dest.read_text(), "hello")
 
 
 class PrefsFileCase(unittest.TestCase):
