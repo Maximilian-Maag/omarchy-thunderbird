@@ -17,8 +17,13 @@ MAIL_MIMES=(
   "x-scheme-handler/mid"
 )
 
+# The system locations this script writes. They are the real ones by default; the environment
+# overrides exist so install.sh's uninstall can be exercised against a throwaway tree.
+ETC_MIMEAPPS="${OMARCHY_TB_ETC_XDG_MIMEAPPS:-/etc/xdg/mimeapps.list}"
+OMARCHY_MIMEAPPS="${OMARCHY_TB_SYS_MIMEAPPS:-/usr/share/applications/mimeapps.list}"
+XEMAIL_LINK="${OMARCHY_TB_XEMAIL_LINK:-/usr/bin/x-email-client}"
+
 # ── /etc/xdg/mimeapps.list ───────────────────────────────────────────────────
-ETC_MIMEAPPS="/etc/xdg/mimeapps.list"
 [[ -f "$ETC_MIMEAPPS" ]] || printf '[Default Applications]\n' > "$ETC_MIMEAPPS"
 grep -q '^\[Default Applications\]' "$ETC_MIMEAPPS" || sed -i '1i[Default Applications]' "$ETC_MIMEAPPS"
 
@@ -29,7 +34,6 @@ done
 echo "  Written $ETC_MIMEAPPS"
 
 # ── /usr/share/applications/mimeapps.list (Omarchy system defaults) ──────────
-OMARCHY_MIMEAPPS="/usr/share/applications/mimeapps.list"
 if [[ -f "$OMARCHY_MIMEAPPS" ]]; then
   [[ ! -f "${OMARCHY_MIMEAPPS}.bak.thunderbird" ]] && \
     cp "$OMARCHY_MIMEAPPS" "${OMARCHY_MIMEAPPS}.bak.thunderbird"
@@ -43,10 +47,10 @@ if [[ -f "$OMARCHY_MIMEAPPS" ]]; then
   echo "  Patched $OMARCHY_MIMEAPPS"
 fi
 
-# ── /usr/bin/x-email-client symlink ──────────────────────────────────────────
-TB_BIN=$(command -v thunderbird 2>/dev/null || echo /usr/bin/thunderbird)
-[[ -f "$TB_BIN" ]] && ln -sf "$TB_BIN" /usr/bin/x-email-client && \
-  echo "  Linked /usr/bin/x-email-client -> $TB_BIN"
+# ── the x-email-client symlink ───────────────────────────────────────────────
+TB_BIN="${OMARCHY_TB_BIN:-$(command -v thunderbird 2>/dev/null || echo /usr/bin/thunderbird)}"
+[[ -f "$TB_BIN" ]] && ln -sf "$TB_BIN" "$XEMAIL_LINK" && \
+  echo "  Linked $XEMAIL_LINK -> $TB_BIN"
 
 update-desktop-database /usr/share/applications 2>/dev/null || true
 echo "  System-wide default mail client set to Thunderbird."

@@ -49,6 +49,17 @@ The install script:
 8. Adds Thunderbird to Hyprland autostart (opens on workspace 4)
 9. Sets Thunderbird as the default mail client (user + system levels)
 
+To reverse it, `--uninstall` removes exactly what the install added and nothing else: the
+`/usr/local/bin` symlinks, the `theme-set` hook, the bindings fragment and its `require`
+block, the autostart entries, the mail MIME registrations (user, `/etc/xdg` and
+`/usr/share/applications` — restoring the `.bak` it made and keeping it), the
+`x-email-client` link, and `policies.json` under `/usr/lib/thunderbird` (only when it is
+still the file this plugin ships). A file or mime default that is not ours is left alone.
+
+```bash
+bash ~/.config/omarchy/plugins/Maximilian-Maag.thunderbird/install.sh --uninstall
+```
+
 ## Themes
 
 Switches with `omarchy theme set` — the hook renders the stylesheet immediately, and the
