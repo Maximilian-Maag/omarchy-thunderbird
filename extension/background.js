@@ -24,8 +24,15 @@ function extractLinks(body) {
     while ((m = re.exec(body)) !== null) found.push({ href: m[1] });
     const bare = /(https?:\/\/[^\s"'<>]+)/gi;
     while ((m = bare.exec(body)) !== null) found.push({ href: m[1] });
-  } else if (body.parts) {
-    for (const part of body.parts) found.push(...extractLinks(part));
+  } else {
+    // Thunderbird's MIME tree carries the decoded text/HTML on each part's `.body`
+    // (a string) and that part's children under `.parts` — the top-level object has
+    // the same shape. Read BOTH, or no string is ever reached and result.links is
+    // always empty, leaving every link-only guard heuristic inert.
+    if (typeof body.body === "string") found.push(...extractLinks(body.body));
+    if (body.parts) {
+      for (const part of body.parts) found.push(...extractLinks(part));
+    }
   }
   return found;
 }

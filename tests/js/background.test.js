@@ -134,3 +134,56 @@ test('the displayed verdict is held for the banner, not stashed in orphan storag
   assert.deepStrictEqual(calls.storageSet, [],
                          'the verdict must not be written to the orphan storage key');
 });
+
+// Drive the real background.js with a spy GuardEngine, so the exact input the guard
+// engine receives (sender + links) can be asserted. The bug guarded against here:
+// extractLinks recursed into body.parts but never read a part's `.body`, so links
+// was always empty and every link-only heuristic was inert.
+async function captureGuardInput(full, displayedId = 9) {
+  const real = global.GuardEngine;
+  let captured = null;
+  global.GuardEngine = {
+    analyze(input) {
+      captured = input;
+      return { verdict: 'ok', sender: { reasons: [] }, links: [] };
+    },
+  };
+  try {
+    const { listeners } = loadBackground({
+      message: { id: displayedId, tags: [], author: 'Evil <x@evil.example>' },
+      full,
+    });
+    listeners.displayed({ id: 3 }, { id: displayedId });
+    await until(() => captured);
+    return captured;
+  } finally {
+    global.GuardEngine = real;
+  }
+}
+
+test('a link in a MIME part body reaches GuardEngine.analyze', async () => {
+  const captured = await captureGuardInput({
+    headers: { from: ['x@evil.example'] },
+    parts: [{ headers: { 'content-type': ['text/html'] },
+              body: '<a href="http://evil.example/login">click</a>' }],
+  });
+  assert.ok(captured, 'the guard engine must be consulted');
+  assert.ok(captured.links.some((l) => l.href === 'http://evil.example/login'),
+            'a part.body link must be extracted, not silently dropped');
+});
+
+test('a nested part body and a top-level body both reach GuardEngine.analyze', async () => {
+  const nested = await captureGuardInput({
+    headers: { from: ['x@evil.example'] },
+    parts: [{ parts: [{ body: 'see https://evil.example/nested' }] }],
+  });
+  assert.ok(nested.links.some((l) => l.href === 'https://evil.example/nested'),
+            'a part.parts child body must be walked');
+
+  const top = await captureGuardInput({
+    headers: { from: ['x@evil.example'] },
+    body: 'bare link https://evil.example/top here',
+  });
+  assert.ok(top.links.some((l) => l.href === 'https://evil.example/top'),
+            'the top-level body must be read too');
+});
